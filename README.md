@@ -8,8 +8,8 @@
 - [ ] Two exps to do: 
      - [ ] 19 to 19 
      - [ ] 3 to 3
-- [ ] Check with other Model as well...like MGCDA model because here they are clear structural errors 
+- [ ] Check with other Model as well...like MGCDA model because where they are clear structural errors 
 - [ ] Can also train prior-net with  other model output simultaneousely as well...i.e. with mgcda and dannet output label...and see its performance improvement 
 - [ ] Check on Saliency map, attention map or entropy any other is required or not. 
-- [ ] can see error correction ocr model from rohit sir 
-- [ ] After training (externally) this prior and then you can train it with the original model from overall end to end stage (i.e. outer loop end to end first and then the overall end to end.
+- [ ] can see error correction ocr model paper from rohit sir 
+- [ ] After training (externally) this prior and then you can train it with the original model from overall end to end stage (i.e. outer loop end to end first and then the overall end to end) and try to get a significant boost. 
