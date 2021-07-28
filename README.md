@@ -2,7 +2,7 @@
 
 * To add structuredness in the night segmentation models (DA or any) 
 * End to End -- Like a auto encoder but on the label space....this is trying to tackle on the label distrubution...such that we are not focusing on style but on the structure as much as possible 
-- [ ] Reading out autoencoder, finding the best archi for the for this task. 
+- [ ] Reading out autoencoder, finding the best archi for the for this task. ..better then UNet cause here we are not segmentation but we are doing some sort of image denoising but on the label space ...either 3 channel or the main 19 one (containing overall probability distribution)
 - [ ] Augmentation -- what to use ( any random black out of the intial RGB images...and then taking predictions from the Same model
 - [ ] Can train the different datasets for pretraining the prior net and the fine tune on the ACDC dataset ... or anyother strategies (if suituable)
 - [ ] Two exps to do: 
