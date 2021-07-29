@@ -1,0 +1,156 @@
+note: 'train'
+# configs of data
+
+model: 'unet_foc_aug_rcrop'
+train: True
+multigpu: False 
+fixbn: False  # check this also ..  chg 
+fix_seed: True
+
+# Optimizaers
+learning_rate: 7.5e-5
+# learning_rate: 1e-4
+num_steps: 5000 # not req 
+epochs: 1000 #chg
+weight_decay: 0.0005
+momentum: 0.9
+power: 0.9
+round: 6
+
+# Logging
+print_freq: 372  # round(2975 cityscapes train / batch 8 )
+save_freq: 372
+tensorboard: True
+neptune: False
+screen: True
+val: True
+val_freq: 5 # 372 ..after one epoch for cityscapes train set (2975) with batch 8
+
+# Dataset 
+source: 'acdc_train_rf_tensor' #chg
+target: 'acdc_val_rf_tensor' #chg
+worker: 4
+batch_size: 16 #chg
+num_classes: 2
+
+#Transforms
+input_src: 720 
+input_tgt: 720 
+crop_src: 600
+crop_tgt: 600
+mirror: True
+scale_min: 0.5
+scale_max: 1.5
+rec: False
+        
+# Model hypers
+init_weight: './save/model410_city_deeplabv2.pth'
+# restore_from: '../scratch/saved_models/acdc/dannet/train/acdc_train_rf_tensor.pth'
+restore_from: None
+
+snapshot: '../scratch/saved_models/acdc/dannet'
+result: './miou_result/'
+log: './log/'
+plabel: './plabel'
+gta5: {
+        data_dir: '/data/uts200/guangrui/gta5/',
+        data_list: './dataset/list/gta5_list.txt',
+        input_size: [1280, 720]
+        }
+synthia: {
+        data_dir: '/home/guangrui/data/synthia/',
+        data_list: './dataset/list/synthia_list.txt',
+        input_size: [1280, 760]
+        }
+cityscapes: {
+        data_dir: '../scratch/data/cityscapes/',
+        data_list: './dataset/list/cityscapes/train.txt',
+        input_size: [1024, 512]
+        }
+cityscapes_val: {
+        data_dir: '../scratch/data/cityscapes/',
+        data_list: './dataset/list/cityscapes/val.txt',
+        input_size: [1024, 512]
+        }
+
+rf_city: {
+        data_dir: '../scratch/data/cityscapes/gtFine/train',
+        data_list: './dataset/list/cityscapes/city_train_rf.txt',
+        input_size: [1024, 512]
+        }
+rf_city_val: {
+        data_dir: '../scratch/data/cityscapes/gtFine/val',
+        data_list: './dataset/list/cityscapes/city_val_rf.txt',
+        input_size: [1024, 512]
+        }
+
+dark_zurichbtad: {
+        data_dir: '/home/cse/staff/sid97.cstaff/scratch/data/dark_zurich/trainbtad/',
+        data_list: './dataset/dark_zurich/trainbtad.txt',
+        input_size: [1920, 1080]
+        }
+
+dark_zurich_valbtad: {
+        data_dir: './inp/',
+        data_list: './dataset/dark.txt',
+        input_size: [2048, 1024]
+        }
+
+dark_zurich_val_rf: { 
+        data_dir: '/home/cse/phd/anz208849/scratch/data/dark_zurich_val/gt',
+        data_list: './dataset/list/darkzurich/dz_val_rf_mgcda.txt',
+        input_size: [1920, 1080]
+        }
+
+dark_zurich_val: { 
+        data_dir: '/home/cse/staff/sid97.cstaff/scratch/data/dark_zurich/val/',
+        data_list: './dataset/dark_zurich/val.txt',
+        input_size: [1920, 1080]
+        }
+
+# dark_zurich_val: {
+#         data_dir: '/home/cse/staff/sid97.cstaff/scratch/data/dark_zurich_enhanced/val/',
+#         data_list: './dataset/dark_zurich/val.txt',
+#         input_size: [1920, 1080]
+#         }
+
+night_city: {
+        data_dir: '/home/cse/staff/sid97.cstaff/research/MGCDA/data/NighttimeDrivingTest',
+        data_list: '/home/cse/staff/sid97.cstaff/research/MGCDA/data/NighttimeDrivingTest_lists_file_names/leftImg8bit_filenames.txt',
+        input_size: [1920,1080]
+        }
+acdc_train_rf: {
+        data_dir: '/home/cse/phd/anz208849/scratch/data/',
+        data_list: './dataset/list/acdc/rf_acdc_train_dannet.txt',
+        input_size: [1920, 1080]
+}
+acdc_val_rf: {
+        data_dir: '/home/cse/phd/anz208849/scratch/data/',
+        data_list: './dataset/list/acdc/rf_acdc_val_dannet.txt',
+        input_size: [1920, 1080]
+}
+acdc_train_rf_tensor: {
+        data_dir: '/home/sidd_s/scratch/saved_models/DANNet/',
+        data_list: './dataset/list/acdc/acdc_trainrgb.txt',
+        input_size: [1920, 1080]
+}
+acdc_val_rf_tensor: {
+        data_dir: '/home/sidd_s/scratch/saved_models/DANNet/',
+        data_list: './dataset/list/acdc/acdc_valrgb.txt',
+        input_size: [1920, 1080]
+}
+acdc_dz_val_rf: {
+        data_dir: '/home/cse/phd/anz208849/scratch/data/dark_zurich_val/gt',
+        data_list: './dataset/list/darkzurich/dz_val_rf_dannet.txt',
+        input_size: [1920, 1080]
+}
+acdc_dz_val_rf_tensor: {
+        data_dir: '/home/cse/phd/anz208849/scratch/data/dark_zurich_val/gt',
+        data_list: './dataset/list/darkzurich/dz_val_rf_dannet.txt',
+        input_size: [1920, 1080]
+}
+acdc_dz_val_rf_vr: {
+        data_dir: '/home/cse/phd/anz208849/scratch/data/dark_zurich_val/gt',
+        data_list: './dataset/list/darkzurich/dz_val_rf_dannet.txt',
+        input_size: [1920, 1080]
+}
