@@ -7,12 +7,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from dataset.dataset import *  # init_dataset
-from model.model_builder_btad_2 import init_model
+from model.model_builder import init_model
 from model import *
 from init_config import *
 from easydict import EasyDict as edict
 import sys
-from trainer.btad_trainer import Trainer
+from trainer.trainer import Trainer
 import trainer
 import time, datetime
 import copy
@@ -30,14 +30,9 @@ def main():
     cudnn.enabled = True
     cudnn.benchmark = True
 #    torch.backends.cudnn.deterministic = True
-    config, writer = init_config("config/so_configmodbtad_2.yml", sys.argv)
-    # if config.source=='synthia':
-    #     config.num_classes=16
-    # elif config.source == 'city_rf':
-    #     # print('***********************')
-    #     config.num_classes = 2
-    # else:
-    #     config.num_classes=19
+    config, writer = init_config("config/config.yml", sys.argv)
+    config.num_classes=19
+    config.num_channels = 19
 
     model = init_model(config)
 
