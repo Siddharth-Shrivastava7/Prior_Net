@@ -223,12 +223,12 @@ class BaseTrainer(object):
 
             ##### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
             # post = seg_pred * img.cuda().detach() ## not going backwards so...no worry here not require to use detach
-            # post = seg_pred * img.cuda() ## causing currently using pred label to gt label exp....
+            post = seg_pred * img.cuda() ## causing currently using pred label to gt label exp....
 
             # post = F.softmax(post, dim=1) ## not using 
 
-            seg_loss = loss(seg_pred, seg_label) ## original
-            # seg_loss = loss(post, seg_label) # posterior MAP estimate
+            # seg_loss = loss(seg_pred, seg_label) ## original
+            seg_loss = loss(post, seg_label) # posterior MAP estimate
             total_loss += seg_loss.item()
         total_loss /= len(iter(testloader))
         print('---------------------')

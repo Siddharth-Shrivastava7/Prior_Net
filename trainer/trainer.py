@@ -57,7 +57,7 @@ class Trainer(BaseTrainer):
         ##############################################################################################
 
         ###### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
-        # post = seg_pred * img.cuda().detach() ## detach is used to remove the grad calc for the original tensor...such that while backprop it doesn't update only the prior adjusts itself to lower the loss in the coming epochs and thus to reduce loss significantly.      ####### This is not possible when we are providing the input as 3 channel pred image or one hot encoded 19 channel image since then at the posterior time ..the likelihood will be 19 channel one hot thing 
+        post = seg_pred * img.cuda().detach() ## detach is used to remove the grad calc for the original tensor...such that while backprop it doesn't update only the prior adjusts itself to lower the loss in the coming epochs and thus to reduce loss significantly.      ####### This is not possible when we are providing the input as 3 channel pred image or one hot encoded 19 channel image since then at the posterior time ..the likelihood will be 19 channel one hot thing 
 
 
         # post = F.softmax(post, dim=1) ## not using 
@@ -65,14 +65,14 @@ class Trainer(BaseTrainer):
         # post = F.log_softmax(seg_pred,dim=1) + F.log_softmax(img.cuda().detach(), dim=1)  ## exp ...let's see ..not works..and not neeeded too
 
 
-        seg_loss = loss(seg_pred, seg_label) ## original
-        # seg_loss = loss(post, seg_label)  # posterior MAP estimate
+        # seg_loss = loss(seg_pred, seg_label) ## original
+        seg_loss = loss(post, seg_label)  # posterior MAP estimate
         self.losses.seg_loss = seg_loss
         loss = seg_loss  
         loss.backward()      
 
     def train(self):
-        writer = SummaryWriter(comment="unet_end2end_predlabel_crop_ce")
+        writer = SummaryWriter(comment="unet_end2end_crop_ce")
 
         if self.config.neptune:
             neptune.init(project_qualified_name='solacex/segmentation-DA')

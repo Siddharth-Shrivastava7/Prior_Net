@@ -1,7 +1,7 @@
 note: 'train'
 # configs of data
 
-model: 'unet_e2e_predlabel'
+model: 'unet_e2e'
 train: True
 multigpu: False 
 fixbn: False  # check this also ..  chg 
@@ -27,12 +27,12 @@ val: True
 val_freq: 5 # 372 ..after one epoch for cityscapes train set (2975) with batch 8
 
 # Dataset 
-source: 'acdc_train_label' #chg for pred label
-target: 'acdc_val_label' #chg
+source: 'acdc_train_tensor' #chg for pred label
+target: 'acdc_val_tensor' #chg
 worker: 4
 batch_size: 16 #chg
 num_classes: 19 #chg
-num_channels: 3 # chg 
+num_channels: 19 # chg 
 
 #Transforms
 input_src: 720 
