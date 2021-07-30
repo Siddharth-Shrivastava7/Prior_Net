@@ -2,7 +2,6 @@ import os, sys
 import argparse
 import numpy as np
 import torch
-from model.DeeplabV2 import *#Res_Deeplab
 from model.Unet import * 
 from collections import OrderedDict
 
@@ -29,11 +28,12 @@ def get_arguments():
     parser = argparse.ArgumentParser(description="DeepLab-ResNet Network")
     parser.add_argument("--ignore-label", type=int, default=255)
     parser.add_argument("--num-classes", type=int, default=19)
-    parser.add_argument("--frm", type=str, default=None)
+    parser.add_argument("--num-channels", type=int, default=3)
+    parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_predlabel.pth')
     parser.add_argument("--start", type=int, default=1)
-    parser.add_argument("--dataset", type=str, default='darkzurich_val')
-    parser.add_argument("--single", action='store_true')
-    parser.add_argument("--model", default='deeplab')
+    parser.add_argument("--dataset", type=str, default='acdc_val_label')
+    # parser.add_argument("--single", action='store_true')
+    parser.add_argument("--model", default='unet')
     return parser.parse_args()
 
 def print_iou(iou, acc, miou, macc):
@@ -59,38 +59,60 @@ def compute_iou(model, testloader, args):
             image, label, edge, _, name = batch
 #            edge = F.interpolate(edge.unsqueeze(0), (512, 1024)).view(1,512,1024)``
             # print(name)
-            if name[0].find('dannet_pred')==-1: 
-                continue
+            # if name[0].find('dannet_pred')==-1: 
+            #     continue
             # print(name)
-            # output =  model(image.cuda())
+            output =  model(image.cuda())
             label = label.cuda()
             # print('label shape:{} output shape:{}'.format(label.shape, output.shape))
             # output = interp(output).squeeze()
             # output = output.squeeze()
             # save_pred(output, './save/dark_zurich_val/btad', args.dataset +str(index)+'.png') # org
             # print(name[0])
-            name =name[0].split('/')[-1]
+            name =name[0].split('/')[-1] 
             # save_pred(output, '../scratch/data/try', name)  # current org # now not save
 
-            output = image.cuda() 
-            output = output.squeeze()
-            C = 2
+            # output = image.cuda() 
+            # output = output.squeeze()
+            # C = 2
             # print(output.shape)
             # print('**********')
-            H, W = output.shape
+            # H, W = output.shape
             # C, H, W = output.shape # original
             # print('[*****]')
             # print(C)
             # print(torch.unique(output))
             # print(torch.unique(torch.argmax(output, dim = 0)))
-            
+
+
+            ### posterior MAP evaluation....
+            output = output.squeeze()
+            image = image.squeeze()
+            # print(image.shape) # torch.Size([19, 1080, 1920]) 
+            # print(output.shape) # torch.Size([19, 1080, 1920])
+            C,H,W = output.shape
+            # posterior = output * image.cuda()  ## it's logits....which usually have taken to go through cross entropy loss...
+            # posterior = F.softmax(posterior, dim=0)
+            # print(label.shape) # ([1, 1080, 1920])
+            # print('**************')
+            # print(torch.unique(label)) ## wtf....how 0 and 1 only......due to TF functinon of to_tensor...not going to use that now
+            # print(image.shape) # torch.Size([19, 1080, 1920])
+            # print('********')
+            # print(torch.unique(image)) # sort of logits from proba distri...  since then Dannet has done a post processing step where they multiplied with weight matrices in order to get more appro results...but since they are doing the argmax so...i am taking it as it is
+            # print(output.shape) # torch.Size([19, 1080, 1920])
+            # print('********') 
+            # print(torch.unique(output)) # logits 
+
+            ### posterior MAP evaluation....
 
             #########################################################################original
             Mask = (label.squeeze())<C  # it is ignoring all the labels values equal or greater than 2 #(1080, 1920) 
             pred_e = torch.linspace(0,C-1, steps=C).view(C, 1, 1)  
             pred_e = pred_e.repeat(1, H, W).cuda() 
             # pred = output.argmax(dim=0).float()
-            pred = output.float()
+            pred = posterior.argmax(dim=0).float()
+            # pred = image.argmax(dim=0).float().cuda()
+            # pred = output.float()
             pred_mask = torch.eq(pred_e, pred).byte() 
             pred_mask = pred_mask*Mask
             # print(Mask.shape) #torch.Size([1080, 1920])
@@ -107,8 +129,8 @@ def compute_iou(model, testloader, args):
             cu_union = (tmp_inter>0).view(C, -1).sum(dim=1, keepdim=True).float()
             cu_preds = pred_mask.view(C, -1).sum(dim=1, keepdim=True).float()
             #extra
-            cu_gts = label_mask.view(C, -1).sum(dim=1, keepdim=True).float()
-            gts += cu_gts
+            # cu_gts = label_mask.view(C, -1).sum(dim=1, keepdim=True).float()
+            # gts += cu_gts
             union+=cu_union
             inter+=cu_inter
             preds+=cu_preds
@@ -158,8 +180,8 @@ def compute_iou(model, testloader, args):
         acc = inter/preds
         mIoU = iou.mean().item()
         mAcc = acc.mean().item()
-        print('*********')
-        print(gts)
+        # print('*********')
+        # print(gts)
         print_iou(iou, acc, mIoU, mAcc)
         ##################
         
@@ -286,43 +308,46 @@ def save_pred(pred, direc, name):
 
 
 def main():
+    os.environ['CUDA_VISIBLE_DEVICES'] = '3'
     args = get_arguments()
-    with open('./config/so_configmodbtad_2.yml') as f:
+    with open('./config/config_eval.yml') as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
     cfg = edict(cfg)
-    cfg.num_classes=args.num_classes
-    if args.single:
-        #from model.fuse_deeplabv2 import Res_Deeplab
-        if args.model=='deeplab':
-            # print('*********************************')
-            model = Res_Deeplab(num_classes=args.num_classes).cuda()
-        elif args.model == 'unet':
-            # print(')))))))))))))))))))))))))))')
-            model = UNet(n_class=2).cuda()
-        else:
-            model = FCN8s(num_classes = args.num_classes).cuda() 
+    # cfg.num_classes=args.num_classes
+    # cfg.num_channels = args.num_channels
+    # if args.single:
+    #from model.fuse_deeplabv2 import Res_Deeplab
+    if args.model=='deeplab':
+        # print('*********************************')
+        model = Res_Deeplab(num_classes=args.num_classes).cuda()
+    elif args.model == 'unet':
+        # print(')))))))))))))))))))))))))))')
+        # model = UNet(n_class=2).cuda() 
+        model = UNet_mod(n_channels=args.num_channels, n_class = args.num_classes).cuda()
+    else:
+        model = FCN8s(num_classes = args.num_classes).cuda() 
 
-        # model = nn.DataParallel(model)
-        model.load_state_dict(torch.load(args.frm)) #original
-        # model.load_state_dict(torch.load(args.frm,strict=False))
+    # model = nn.DataParallel(model)
+    model.load_state_dict(torch.load(args.frm)) #original
+    # model.load_state_dict(torch.load(args.frm,strict=False))
 
-        # original saved file with DataParallel
-        # state_dict = torch.load(args.frm)
-        # # create new OrderedDict that does not contain `module.`
-        # new_state_dict = OrderedDict()
-        # for k, v in state_dict.items():
-        #     name = k[7:] # remove `module.`
-        #     new_state_dict[name] = v
-        # # load params
-        # model.load_state_dict(new_state_dict)
+    # original saved file with DataParallel
+    # state_dict = torch.load(args.frm)
+    # # create new OrderedDict that does not contain `module.`
+    # new_state_dict = OrderedDict()
+    # for k, v in state_dict.items():
+    #     name = k[7:] # remove `module.`
+    #     new_state_dict[name] = v
+    # # load params
+    # model.load_state_dict(new_state_dict)
 
-        model.eval().cuda()
-        testloader  = init_test_dataset(cfg, args.dataset, set='val')
-        # print(len(testloader))
-        # print('****************************************************')
-        # save_fake(model, testloader)
-        iou, mIoU, acc, mAcc = compute_iou(model, testloader, args) # original
-        return
+    model.eval().cuda()
+    testloader  = init_test_dataset(cfg, args.dataset, set='val')
+    # print(len(testloader))
+    # print('****************************************************')
+    # save_fake(model, testloader)
+    iou, mIoU, acc, mAcc = compute_iou(model, testloader, args) # original
+    return
 
     # sys.stdout = Logger(osp.join(cfg['result'], args.frm+'.txt'))
 

@@ -14,6 +14,8 @@ from torch.nn import functional as F
 import random
 from torchvision import transforms 
 
+## one caveat with TF.to_tensor...that it convert the value of the image between 0 and 1 
+
 
 class BaseDataSet(data.Dataset):
     def __init__(self, root, list_path,dataset, num_class,  joint_transform=None, transform=None, label_transform = None, max_iters=None, ignore_label=255, set='val', plabel_path=None, max_prop=None, selected=None,centroid=None, wei_path=None):
@@ -86,9 +88,6 @@ class BaseDataSet(data.Dataset):
             for name in self.img_ids:
                 # print(name)
                 nm = name.split('/')[-1] 
-                # print(self.set)
-                # print('**********')
-                # print(nm)
                 # img_file = osp.join(self.root, "leftImg8bit/%s/%s" % (self.set, name)) # original
                 img_file = osp.join(self.root, "leftImg8bit/%s/%s/%s" % (self.set, 'dark_city', nm))
                 label_name = name.replace('leftImg8bit', 'gtFine_labelIds')
@@ -363,6 +362,64 @@ class BaseDataSet(data.Dataset):
                 # print(label_file) 
                     # print(label_file)
 
+        elif dataset == 'acdc_train_tensor' or dataset == 'acdc_val_tensor':
+            # print('*************************')
+            # print(self.set)
+            for name in self.img_ids:
+                nm = name.split('/')[-1].replace('.png','.pt')
+                pred_save = 'acdc/tensor_' + self.set + '_pred'
+                img_file = osp.join(self.root, pred_save, nm) 
+
+                # nm = name.split('/')[-1].replace('rgb_anon', 'gt_labelColor').replace('acdc_trainval','acdc_gt')
+                replace = (("_rgb_anon", "_gt_labelTrainIds"), ("acdc_trainval", "acdc_gt"), ("rgb_anon", "gt"), (".pt", ".png"))
+                nm = name
+                for r in replace: 
+                    nm = nm.replace(*r)  
+                root = '/home/sidd_s/scratch/data_hpc/data'
+                label_file = osp.join(root, nm) 
+                # print(label_file)
+                # print('***************')
+                # print(img_file)
+                # break
+                # print(label_file)
+                self.files.append({
+                    "img": img_file,
+                    "label":label_file,
+                    "name": name
+                })
+
+        elif dataset == 'acdc_train_label' or dataset == 'acdc_val_label':
+            for name in self.img_ids:
+                nm = name.split('/')[-1] 
+                im_save = self.set + '_pred_dannet'
+                img_file = osp.join(self.root,im_save, nm)
+
+                replace = (("_rgb_anon", "_gt_labelTrainIds"), ("acdc_trainval", "acdc_gt"), ("rgb_anon", "gt"))
+                nm = name
+                for r in replace: 
+                    nm = nm.replace(*r)  
+                root = '/home/sidd_s/scratch/data_hpc/data'
+                label_file = osp.join(root, nm) 
+                self.files.append({
+                    "img": img_file,
+                    "label":label_file,
+                    "name": name
+                })
+        
+        elif dataset == 'dz_val_tensor_gt':
+            for name in self.img_ids:
+                if 'dannet_pred' not in name:
+                    nm = name.split('/')[-1].replace('_gt_labelColor.png', '_rgb_anon.pt')
+                    img_save = '/home/sidd_s/scratch/saved_models_hpc/saved_models/DANNet/dz_val/tensor_pred'
+                    img_file = osp.join(img_save, nm)
+                    nm = name.replace('_gt_labelColor.png','_gt_labelTrainIds.png')
+                    label_file = osp.join(img_file, nm)
+                    self.files.append({
+                    "img": img_file,
+                    "label":label_file,
+                    "name": name
+                    })
+
     def __len__(self):
         return len(self.files)
 
@@ -375,82 +432,130 @@ class BaseDataSet(data.Dataset):
         try:
             # image = Image.open(datafiles["img"]).convert('RGB')
             if self.dataset in ['acdc_val_rf_tensor', 'acdc_train_rf_tensor', 'acdc_dz_val_rf_tensor']:
-                
                 if self.set == 'val': 
-                    x = []
-                    image = torch.load(datafiles["img"])
-                    image = image.transpose(2,0,1)
+                    # x = []
+                    # image = torch.tensor(torch.load(datafiles["img"]))
+                    # image = image.transpose(2,0,1)
+
+                    # label = Image.open(datafiles['label'])
+                    # # how to resize have to seee  and don't crop the label rather resize only the image..cause it will good in evaluation
+                    # # ya so...no rcrop in val...only resizing and in a way calculating by original 
+                    # # i, j, h, w = transforms.RandomCrop.get_params(                  # 512 x 512 cropping is in orginal 
+                    # #                 label, output_size=(512, 512)) 
+                    # # label = TF.crop(label, i, j, h,w)  
+                    # # label = TF.resize(label, (512, 512), interpolation = Image.NEAREST) # commenting for original size evalutaion  
+
+                    # label = np.array(label, dtype = np.int32)   
+                    # label[label == 127] = 1
+                    # # label = TF.to_tensor(label).to(dtype=torch.uint8) ## wrong way....
+                    # label = torch.tensor(label)
+                    # label = label.squeeze(dim=0) 
+                    # # print(torch.unique(label)) 
+                    # # print('***********')
+
+                    # for ch in image: 
+                    #     ch = Image.fromarray(ch)
+                    #     # ch = TF.crop(ch, i,j ,h,w) 
+                    #     # ch = TF.resize(ch, (512, 512)) # see this # (512,512) for unet mod and unet gan goes for (256,256)
+                    #     ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)     
+                    #     # x.append(TF.to_tensor(ch)) ## wrong way....
+                    #     x.append(torch.tensor(np.array(ch)))
+                    # # image = torch.cat(x) ## wrong way.... 
+                    # image = torch.stack(x, dim = 0)  
+
+                    # image = F.softmax(image, dim = 0) ##an experiment to not use..use it
+                    # # print(image.shape)
+                    # # print('**********')
+
+                    ### modified one....for val
+                    image = torch.tensor(torch.load(datafiles["img"]))
+                    image = image.transpose(2,0).transpose(1,2) 
 
                     label = Image.open(datafiles['label'])
-                    # how to resize have to seee  and don't crop the label rather resize only the image..cause it will good in evaluation
-                    # ya so...no rcrop in val...only resizing and in a way calculating by original 
-                    # i, j, h, w = transforms.RandomCrop.get_params(                  # 512 x 512 cropping is in orginal 
-                    #                 label, output_size=(512, 512)) 
-                    # label = TF.crop(label, i, j, h,w)  
-                    # label = TF.resize(label, (512, 512), interpolation = Image.NEAREST) # commenting for original size evalutaion 
                     label = np.array(label, dtype = np.int32)   
                     label[label == 127] = 1
-                    label = TF.to_tensor(label).to(dtype=torch.uint8)
+                    label = torch.tensor(label)
                     label = label.squeeze(dim=0) 
-                    # print(torch.unique(label)) 
-                    # print('***********')
-
-                    for ch in image: 
-                        ch = Image.fromarray(ch)
-                        # ch = TF.crop(ch, i,j ,h,w) 
-                        # ch = TF.resize(ch, (512, 512)) # see this # (512,512) for unet mod and unet gan goes for (256,256)
-                        ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)    
-                        x.append(TF.to_tensor(ch))
-                    image = torch.cat(x)
-                    image = F.softmax(image, dim = 0) ##an experiment to not use..use it
-                    # print(image.shape)
-                    # print('**********')
+         
+                    ## pytorch transfroms ... how to compose them effectively 
+                    # img_transforms_compose = transforms.Compose([transforms.ToPILImage(), transforms.Resize((512,512),interpolation=Image.NEAREST]) ## not using the random crop (now)
+                    # img_trans = img_transforms_compose(image)  
                     
                 else:
-                    seed = np.random.randint(2147483647) 
-                    x = []
-                    # 19 channel image transformation                
-                    name = datafiles["name"] 
-                    image = torch.load(datafiles["img"])
-                    image = image.transpose(2,0,1)
+                    # seed = np.random.randint(2147483647) 
+                    # x = []
+                    # # 19 channel image transformation                
+                    # name = datafiles["name"] 
+                    # image = torch.load(datafiles["img"])
+                    # image = image.transpose(2,0,1)
                     
-                    label = Image.open(datafiles['label'])
-                    # i, j, h, w = transforms.RandomCrop.get_params(
-                    #                 label, output_size=(512, 512))
-                    # print('****************')
-                    # print(i,j,h,w)
-                    tfms = transforms.Compose([
-                            transforms.RandomHorizontalFlip(),
-                            transforms.RandomVerticalFlip()])
-                    for ch in image: 
-                        random.seed(seed) 
-                        torch.manual_seed(seed)
-                        ch = Image.fromarray(ch)
-                        # ch = TF.crop(ch, i,j ,h,w)
-                        ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)  
-                        ch = tfms(ch)
-                        x.append(TF.to_tensor(ch))
-                    image = torch.cat(x)
-                    image = F.softmax(image, dim = 0) ## an experiment to not use...use it 
-
-                    random.seed(seed) 
-                    torch.manual_seed(seed)
-                    # label = TF.crop(label, i, j, h,w)
-                    label = TF.resize(label, (512, 512), interpolation = Image.NEAREST)  
-                    label = tfms(label)
-                    label = np.array(label, dtype = np.int32)
-                    label[label == 127] = 1
-                    label = TF.to_tensor(label).to(dtype=torch.uint8)
-                    label = label.squeeze(dim=0)
+                    # label = Image.open(datafiles['label'])
+                    # # i, j, h, w = transforms.RandomCrop.get_params(
+                    # #                 label, output_size=(512, 512))
+                    # # print('****************')
+                    # # print(i,j,h,w)
+                    # tfms = transforms.Compose([
+                    #         transforms.RandomHorizontalFlip(),
+                    #         transforms.RandomVerticalFlip()])
+                    # for ch in image: 
+                    #     random.seed(seed) 
+                    #     torch.manual_seed(seed)
+                    #     ch = Image.fromarray(ch)
+                    #     # ch = TF.crop(ch, i,j ,h,w)
+                    #     ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)  
+                    #     ch = tfms(ch)
+                    #     # x.append(TF.to_tensor(ch)) ## wrong way....
+                    #     x.append(torch.tensor(np.array(ch)))
+                    # # image = torch.cat(x) ## wrong way...
+                    # image = torch.stack(x, dim = 0)
+                    # # image = F.softmax(image, dim = 0) ## an experiment to not use...use it 
+                    # random.seed(seed) 
+                    # torch.manual_seed(seed)
+                    # # label = TF.crop(label, i, j, h,w)
+                    # label = TF.resize(label, (512, 512), interpolation = Image.NEAREST)  
+                    # label = tfms(label)
+                    # label = np.array(label, dtype = np.int32)
+                    # label[label == 127] = 1
+                    # # label = TF.to_tensor(label).to(dtype=torch.uint8) ## wrong way....
+                    # label = torch.tensor(label)
+                    # label = label.squeeze(dim=0) 
                 
-                # print(torch.unique(label)) #tensor([0, 1, 255], dtype=torch.int32)
-                # print('####################')
-                # print(label.shape) #torch.Size([1080, 1920]); torch.Size([256, 256])
-                # print(image.shape) # torch.Size([19, 1080, 1920]); torch.Size([19, 256, 256])
-                # print('&&&&&&&&&&&&&&&&&&&&')
-                # print(torch.is_tensor(image)) 
-                # print(torch.is_tensor(label))   
-                # print('yo')
+                    # # print(torch.unique(label)) #tensor([0, 1, 255], dtype=torch.int32)
+                    # # print('####################')
+                    # # print(label.shape) #torch.Size([1080, 1920]); torch.Size([256, 256])
+                    # # print(image.shape) # torch.Size([19, 1080, 1920]); torch.Size([19, 256, 256])
+                    # # print('&&&&&&&&&&&&&&&&&&&&')
+                    # # print(torch.is_tensor(image)) 
+                    # # print(torch.is_tensor(label))   
+                    # # print('yo')
+
+                    ### modified one...for train 
+
+                    ## only augmentation currently, doing is the random crop
+                    x = []
+                    image = torch.load(datafiles["img"]) 
+                    image = image.transpose(2,0,1) 
+
+                    label = Image.open(datafiles['label']) 
+                    i, j, h, w = transforms.RandomCrop.get_params(
+                                    label, output_size=(512, 512))
+                
+                    for ch in image:
+                        ch = Image.fromarray(ch) 
+                        # ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)  
+                        ch = TF.crop(ch, i,j ,h,w)
+                        x.append(torch.tensor(np.array(ch))) 
+                    image = torch.stack(x, dim = 0)
+
+                    label = TF.crop(label, i, j, h,w) 
+                    # label = TF.resize(label, (512, 512), interpolation = Image.NEAREST)
+                    label = np.array(label, dtype = np.int32)
+                    label[label == 127] = 1 
+                    label = torch.tensor(label)
+                    label = label.squeeze(dim=0)
+
+                    ### modified one...for train
+
 
             # if self.dataset == 'rf_city' or self.dataset == 'rf_city_val':
             #     # print('&???*******?')
@@ -473,6 +578,104 @@ class BaseDataSet(data.Dataset):
                 # print(self.dataset)
                 image = Image.open(datafiles["img"]).convert('RGB')
                 label = []
+            
+            ## tensor to gt label (for end to end learning)
+            elif self.dataset == 'acdc_train_tensor' or self.dataset == 'acdc_val_tensor':
+                if self.set == 'val': 
+                    # print('&&&&&&&&&&&')
+                    # x = [] 
+                    # image = torch.load(datafiles["img"])
+                    # image = image.transpose(2,0,1)
+                    # image = torch.tensor(image)
+                    # # print(image.shape)  ## (19, 1080, 1920)  
+                    # # for ch in image:  
+                    # #     ch = Image.fromarray(ch)
+                    # #     # ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)
+                    # #     # x.append(TF.to_tensor(ch))  ## wrong way....
+                    # #     x.append(torch.tensor(np.array(ch)))
+                    # # image = torch.cat(x) ## wrong way...
+                    # # image = torch.stack(x, dim = 0)
+                    # # print(image.shape) # torch.Size([19, 1080, 1920])
+                    # # image = F.softmax(image, dim = 0)  ## softmax ...making it a proba distribution...not using it now 
+                    # # print(torch.unique(image))
+                    # # print(image)
+
+                    # label = Image.open(datafiles['label']) 
+                    # # print(datafiles['label']) ## its correct 
+                    # label = torch.tensor(np.array(label))
+                    # # label = TF.to_tensor(label).to(dtype=torch.uint8)  #### this is shit....it convert the tensor into 0 and 1 ....yaar...alright i will try ## wrong way....
+                    # label = label.squeeze(dim=0)  
+                    # print(label.shape) # torch.Size([1080, 1920])
+                    # print(torch.unique(label)) ## tensor([0, 1], its learning wrong....ohhhh gooooddd
+                    ## original size eval...let see...if its tooo slow then resize the image here ...cause now using cross entropy loss of pytorch not nll...
+                
+                    ### modified...val 
+                    image = torch.tensor(torch.load(datafiles["img"]))
+                    image = image.transpose(2,0).transpose(1,2) 
+                    
+                    label = Image.open(datafiles['label'])
+                    label = torch.tensor(np.array(label))
+                    label = label.squeeze(dim=0) 
+                    ### modified...val
+                
+                else: 
+                    # # print('************')
+                    # x = []
+                    # seed = np.random.randint(2147483647) 
+                    # image = torch.load(datafiles["img"])
+                    # image = image.transpose(2,0,1)
+                    # # tfms = transforms.Compose([  ### testing once commenting it 
+                    # #         transforms.RandomHorizontalFlip(),
+                    # #         transforms.RandomVerticalFlip()])
+                    
+                    # label = Image.open(datafiles['label'])
+                    # i, j, h, w = transforms.RandomCrop.get_params(
+                    #                 label, output_size=(512, 512)) 
+
+                    # for ch in image: 
+                    #     random.seed(seed) 
+                    #     torch.manual_seed(seed)
+                    #     ch = Image.fromarray(ch)
+                    #     # ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)  ## different method of reszeing see...or first verify this 
+                    #     # ch = TF.crop(ch, i,j ,h,w) 
+                    #     # ch = tfms(ch)
+                    #     # x.append(TF.to_tensor(ch)) ## wrong way....
+                    #     x.append(torch.tensor(np.array(ch))) 
+                    # # image = torch.cat(x)## wrong way...
+                    # image = torch.stack(x, dim = 0)
+                    # # image = F.softmax(image, dim = 0) ## softmax ...making it a proba distribution ### let it be..don't use this...cause now using cross entropy loss of pytorch not nll...
+
+                    # random.seed(seed) 
+                    # torch.manual_seed(seed)
+                    # # label = TF.crop(label, i, j, h, w)
+                    # label = TF.resize(label, (512, 512), interpolation = Image.NEAREST)  
+                    # # label = tfms(label)
+                    # # label = TF.to_tensor(label).to(dtype=torch.uint8) ## wrong way....
+                    # label = torch.tensor(np.array(label))
+                    # label = label.squeeze(dim=0)
+
+                    ### Modified for train.... only cropping...not resizing will do if possible on the next iterations...
+                    x = [] 
+                    image = torch.load(datafiles["img"]) 
+                    image = image.transpose(2,0,1)
+                    label = Image.open(datafiles['label']) 
+                    i, j, h, w = transforms.RandomCrop.get_params(
+                                    label, output_size=(512, 512))
+                
+                    for ch in image:
+                        ch = Image.fromarray(ch) 
+                        # ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)  
+                        ch = TF.crop(ch, i,j ,h,w)
+                        x.append(torch.tensor(np.array(ch))) 
+                    image = torch.stack(x, dim = 0)
+
+                    label = TF.crop(label, i, j, h, w) 
+                    # label = TF.resize(label, (512, 512), interpolation = Image.NEAREST)
+                    label = torch.tensor(np.array(label))
+                    label = label.squeeze(dim=0)
+                    ### Modified for train.... 
+
+
 
             # elif self.dataset == 'acdc_train_rf' or self.dataset == 'acdc_val_rf' or self.dataset == 'rf_city' or self.dataset == 'rf_city_val' or self.dataset == 'rf_city_dark' or self.dataset=='rf_city_dark_val' or self.dataset == 'dark_zurich_val_rf' or self.dataset=='acdc_dz_val_rf':
             elif self.dataset in ['acdc_train_rf', 'acdc_val_rf', 'rf_city', 'rf_city_val', 
@@ -483,6 +686,12 @@ class BaseDataSet(data.Dataset):
                 label = np.array(Image.open(datafiles['label']), dtype = np.int32)
                 label[label == 127] = 1
                 label = Image.fromarray(label.astype(np.uint8)) 
+                if self.joint_transform is not None:
+                    image, label = self.joint_transform(image, label, None)
+                if self.label_transform is not None:
+                    label = self.label_transform(label)
+                if self.transform is not None:
+                    image = self.transform(image)
 
             elif self.dataset == 'acdc_dz_val_rf_vr':
                 # print('*****')
@@ -499,8 +708,24 @@ class BaseDataSet(data.Dataset):
                 label[label == 127] = 1
                 # print(np.unique(label))
                 label = Image.fromarray(label.astype(np.uint8))
-                label_transform = transforms.MaskToTensor()
-                label = label_transform(label)
+                # label_transform = transforms.MaskToTensor()
+                # label = label_transform(label)
+                if self.joint_transform is not None:
+                    image, label = self.joint_transform(image, label, None)
+                if self.label_transform is not None:
+                    label = self.label_transform(label)
+                if self.transform is not None:
+                    image = self.transform(image)
+            
+            elif self.dataset in ['acdc_train_label', 'acdc_val_label']:  ## check this, once ..........................
+                image = Image.open(datafiles["img"]).convert('RGB')
+                label = Image.open(datafiles["label"]) 
+                if self.joint_transform is not None:
+                    image, label = self.joint_transform(image, label, None)
+                if self.label_transform is not None:
+                    label = self.label_transform(label)
+                if self.transform is not None:
+                    image = self.transform(image)
 
             else:
                 image = Image.open(datafiles["img"]).convert('RGB')
@@ -514,6 +739,13 @@ class BaseDataSet(data.Dataset):
                 else:
                     label_copy = label
                 label = Image.fromarray(label_copy.astype(np.uint8))
+                if self.joint_transform is not None:
+                    image, label = self.joint_transform(image, label, None)
+                if self.label_transform is not None:
+                    label = self.label_transform(label)
+                if self.transform is not None:
+                    image = self.transform(image)
+
 
             # original >>>>>>                               #if image as the input
             # if self.joint_transform is not None:

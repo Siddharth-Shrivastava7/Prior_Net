@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchsummary import summary
+import os
 
 def double_conv(in_channels, out_channels):
   return nn.Sequential(
@@ -50,7 +51,6 @@ class UNet_mod(nn.Module):
     super(UNet_mod, self).__init__()
     self.n_channels = n_channels
     self.n_class = n_class
-    self.bilinear = bilinear
 
     self.inc = double_conv(n_channels, 64)
     self.down1 = down(64,128)
@@ -80,10 +80,11 @@ class UNet_mod(nn.Module):
     return logits
 
 # if __name__ == '__main__': 
+#   os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 #   print('*********************Model Summary***********************')
 #   model = UNet_mod(n_channels=19, n_class = 19) 
 #   if torch.cuda.is_available(): 
 #     model = model.cuda()
 
-#   print(summary(model, (19, 512, 512))) 
+#   print(summary(model, (19, 1920, 1080))) 

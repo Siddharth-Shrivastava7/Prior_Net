@@ -1,7 +1,7 @@
 note: 'train'
 # configs of data
 
-model: 'unet_e2e'
+model: 'unet_e2e_predlabel'
 train: True
 multigpu: False 
 fixbn: False  # check this also ..  chg 
@@ -27,11 +27,12 @@ val: True
 val_freq: 5 # 372 ..after one epoch for cityscapes train set (2975) with batch 8
 
 # Dataset 
-source: 'acdc_train_tensor' #chg
-target: 'acdc_val_tensor' #chg
+source: 'acdc_train_label' #chg for pred label
+target: 'acdc_val_label' #chg
 worker: 4
 batch_size: 16 #chg
 num_classes: 19 #chg
+num_channels: 3 # chg 
 
 #Transforms
 input_src: 720 
@@ -45,8 +46,8 @@ rec: False
         
 # Model hypers
 init_weight: './save/model410_city_deeplabv2.pth'
-# restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_focal_aug_resize.pth'
 restore_from: None
+# restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e.pth'
 
 snapshot: '../scratch/saved_models/acdc/dannet'
 result: './miou_result/'
@@ -113,4 +114,19 @@ acdc_val_tensor: {
         data_dir: '/home/sidd_s/scratch/saved_models/DANNet/',
         data_list: './dataset/list/acdc/acdc_valrgb.txt',
         input_size: [1920, 1080]        
+}
+acdc_train_label: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data/acdc_gt/',
+        data_list: './dataset/list/acdc/acdc_trainrgb.txt',
+        input_size: [1920, 1080]
+}
+acdc_val_label: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data/acdc_gt/',
+        data_list: './dataset/list/acdc/acdc_valrgb.txt',
+        input_size: [1920, 1080]
+}
+acdc_val: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data/', 
+        data_list: './dataset/list/acdc/acdc_valrgb.txt',
+        input_size: [1920, 1080]
 }

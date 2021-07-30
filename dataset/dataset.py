@@ -184,7 +184,7 @@ def init_test_dataset(config, dataset_name, set, selected=None, prop=None, label
     #         transforms.ToTensor()
     #         ]
     # train_transform = standard_transforms.Compose(transform_list)
-    # original 
+    # original
 
     # mod
     # joint_transform = None # extra...just for original evaluation at the test time
@@ -211,8 +211,12 @@ def init_test_dataset(config, dataset_name, set, selected=None, prop=None, label
         label_transform = [transforms.ResizeLabel((2048, 1024)),
                 transforms.MaskToTensor()]
         label_transform = standard_transforms.Compose(label_transform)
+    elif dataset_name == 'acdc_val_label':
+        joint_transform = None 
+        label_transform = transforms.MaskToTensor() 
     else:
         label_transform = transforms.MaskToTensor()
+
     targetloader = data.DataLoader(
             BaseDataSet(env.data_dir, data_list, dataset_name, config.num_classes, 
                         joint_transform =  joint_transform,

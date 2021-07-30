@@ -22,7 +22,7 @@ import random
 # .. yml file .. chg
 
 def main():
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     torch.manual_seed(1234)
     torch.cuda.manual_seed(1234)
     np.random.seed(1234)
@@ -31,8 +31,8 @@ def main():
     cudnn.benchmark = True
 #    torch.backends.cudnn.deterministic = True
     config, writer = init_config("config/config.yml", sys.argv)
-    config.num_classes=19
-    config.num_channels = 19
+    # config.num_classes=19
+    # config.num_channels = 19
 
     model = init_model(config)
 

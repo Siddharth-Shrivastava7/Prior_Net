@@ -28,33 +28,51 @@ class Trainer(BaseTrainer):
         img, seg_label, _, _, name = batch
         # print(img.shape) 
         
-        # seg_label = seg_label.long().cuda() # cross entropy 
-        seg_label = seg_label.float().cuda() # bce or focal loss 
+        seg_label = seg_label.long().cuda() # cross entropy  
         b, c, h, w = img.shape
-        # print(img.shape)
+        # print(img.shape) # torch.Size([16, 19, 512, 512])
+        
+        # img = F.softmax(img, dim=1) ## extra see ...not giving not results not optimising early as comparre to just logits....but then 
 
         seg_pred = self.model(img.cuda())
-        # seg_pred = nn.DataParallel(self.model(img.cuda()))
-        seg_pred = seg_pred.squeeze(dim=1) #for bce or focal loss 
+        # print(seg_pred.shape) # torch.Size([16, 19, 512, 512])
+        # seg_pred = nn.DataParallel(self.model(img.cuda())) 
         # print('yes')
-        # print(seg_label.shape, seg_pred.shape)
-        # seg_loss = F.binary_cross_entropy(seg_pred, seg_label)
+        # print(seg_label.shape, seg_pred.shape) # torch.Size([16, 512, 512]) torch.Size([16, 19, 512, 512])
         # print(seg_label.shape)
         # print('&&&&&&&&&&&&&&&&&&&&&&&&')
+        # print(img.shape) # torch.Size([16, 19, 512, 512])
         # print(seg_pred.shape)
         # print('**********************')
-        loss = WeightedFocalLoss(alpha= 0.75, gamma=3) # alpha ...gamma are hyper param ..have to decide later ## chaged from alpha =0.75, gamma = 2
-        # loss = WeightedFocalLoss() #not workinjg ...cause the class imbalance issue..is major here...
-        # print('****')
-        seg_loss = loss(seg_pred, seg_label)
-        # loss = CrossEntropy2d() # ce loss 
-        # seg_loss = loss(seg_pred, seg_label)
+        loss = CrossEntropy2d() # ce loss 
+        
+        # seg_pred = F.softmax(seg_pred, dim=1) ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy  ## not using 
+
+        ##############################################################################################
+        ### an exp.. to perfrom...which will be more related to probability (MAP) case of our hypothesis
+        # seg_pred = F.softmax(seg_pred, dim=1) ## proba distri for the prior 
+        ## now the tensor what we got from dannet assuming it to be prob distri only...but it has negative values tooo...but since over the same the argmax was taken thus that's our proba distri ... no more changes...now the posterior will be...as below defined....       that posterior will be the logits or the proba that we need to do...but my guess it should be the proba (still or exp with both)        
+        
+        ### an exp...
+        ##############################################################################################
+
+        ###### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
+        # post = seg_pred * img.cuda().detach() ## detach is used to remove the grad calc for the original tensor...such that while backprop it doesn't update only the prior adjusts itself to lower the loss in the coming epochs and thus to reduce loss significantly.      ####### This is not possible when we are providing the input as 3 channel pred image or one hot encoded 19 channel image since then at the posterior time ..the likelihood will be 19 channel one hot thing 
+
+
+        # post = F.softmax(post, dim=1) ## not using 
+        # post = F.log_softmax(post, dim=1)  ## can use this with NLL pytorch function ..yes yes 
+        # post = F.log_softmax(seg_pred,dim=1) + F.log_softmax(img.cuda().detach(), dim=1)  ## exp ...let's see ..not works..and not neeeded too
+
+
+        seg_loss = loss(seg_pred, seg_label) ## original
+        # seg_loss = loss(post, seg_label)  # posterior MAP estimate
         self.losses.seg_loss = seg_loss
         loss = seg_loss  
-        loss.backward()
+        loss.backward()      
 
     def train(self):
-        writer = SummaryWriter(comment="reak_fake_unet_chgfoclr_resize")
+        writer = SummaryWriter(comment="unet_end2end_predlabel_crop_ce")
 
         if self.config.neptune:
             neptune.init(project_qualified_name='solacex/segmentation-DA')
@@ -179,7 +197,8 @@ class CrossEntropy2d(nn.Module):
         # print(predict.shape)
         # print('***************')
         # print(target.shape)
-        loss = F.cross_entropy(predict, target, weight=weight, size_average=self.size_average)
+        loss = F.cross_entropy(predict, target, weight=weight, size_average=self.size_average) 
+        # loss = F.nll_loss(predict, target, weight=weight, size_average= self.size_average )   ## NLL loss cause the pred is now in softmax form..not using cause....nan is showing up sometimes    
         return loss
 
 class WeightedFocalLoss(nn.Module):

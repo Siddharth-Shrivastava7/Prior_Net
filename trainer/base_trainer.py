@@ -209,22 +209,26 @@ class BaseTrainer(object):
             # print(img.shape)
             # print('******')
             # print(seg_label.shape)
-            # seg_label = seg_label.long().cuda() # ce loss 
-            seg_label = seg_label.float().cuda() # bce or focal loss 
+            seg_label = seg_label.long().cuda() # ce loss 
             b, c, h, w = img.shape
             # print(img.shape)
             # print('********')
             # interp = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)  #original eval 
             seg_pred = self.model(img.cuda())
-            seg_pred = seg_pred.squeeze(dim=1) # for bce or focal loss 
             # seg_pred = interp(seg_pred).squeeze(dim=1)  # #original eval
             # print(seg_pred.shape, seg_label.shape)
-            # seg_loss = F.binary_cross_entropy(seg_pred, seg_label)
-            # loss = CrossEntropy2d()
-            # seg_loss = loss(seg_pred, seg_label)
-            loss = WeightedFocalLoss(alpha=0.75, gamma=3) ## chaged from alpha =0.75, gamma = 2
-            # loss = WeightedFocalLoss()
-            seg_loss = loss(seg_pred, seg_label)
+            loss = CrossEntropy2d()
+
+            # seg_pred = F.softmax(seg_pred, dim=1)  ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy ## not using 
+
+            ##### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
+            # post = seg_pred * img.cuda().detach() ## not going backwards so...no worry here not require to use detach
+            # post = seg_pred * img.cuda() ## causing currently using pred label to gt label exp....
+
+            # post = F.softmax(post, dim=1) ## not using 
+
+            seg_loss = loss(seg_pred, seg_label) ## original
+            # seg_loss = loss(post, seg_label) # posterior MAP estimate
             total_loss += seg_loss.item()
         total_loss /= len(iter(testloader))
         print('---------------------')
@@ -262,6 +266,7 @@ class CrossEntropy2d(nn.Module):
         # print('***************')
         # print(target.shape)
         loss = F.cross_entropy(predict, target, weight=weight, size_average=self.size_average)
+        # loss = F.nll_loss(torch.log(predict), target, weight=weight, size_average=self.size_average) ## NLL loss cause the pred is now in softmax form..
         return loss
 
 class WeightedFocalLoss(nn.Module):
