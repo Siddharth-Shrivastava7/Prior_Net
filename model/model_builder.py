@@ -20,7 +20,7 @@ def release_bnad(net):
 
 def init_model(cfg):
 
-    model = UNet_mod(cfg.num_channels, cfg.num_classes).cuda()
+    model = UNet_mod(cfg.num_channels, cfg.num_classes, cfg.fake_ce).cuda()
 
     if cfg.restore_from != 'None':
         params = torch.load(cfg.restore_from)

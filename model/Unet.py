@@ -1,3 +1,4 @@
+# original
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,9 +10,11 @@ def double_conv(in_channels, out_channels):
     nn.Conv2d(in_channels, out_channels, kernel_size = 3, padding=1),
     nn.BatchNorm2d(out_channels),
     nn.ReLU(inplace=True),
+    # nn.Dropout(p=0.9), ## regualarisation..using high dropout rate of 0.9...lets see for few moments...
     nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
     nn.BatchNorm2d(out_channels),
-    nn.ReLU(inplace=True)
+    nn.ReLU(inplace=True),
+    # nn.Dropout(p=0.5) ## dual dropout 
   )
 
 def down(in_channels, out_channels):
@@ -47,12 +50,13 @@ def outconv(in_channels, out_channels):
  
 
 class UNet_mod(nn.Module):
-  def __init__(self, n_channels, n_class):
+  def __init__(self, n_channels, n_class, fake_ce):
     super(UNet_mod, self).__init__()
     self.n_channels = n_channels
     self.n_class = n_class
+    self.fake_ce = False ## for reducing model complexity in order to reduce for overfitting  ## back to org ...better to go ahead with the bigger size unet model its giving better performance as compare to the smaller model one....so my hypothesis is that more regularisation is required instead of decreasing the model complexing for correction net...
 
-    self.inc = double_conv(n_channels, 64)
+    self.inc = double_conv(self.n_channels, 64)
     self.down1 = down(64,128)
     self.down2 = down(128,256)
     self.down3 = down(256,512)
@@ -62,29 +66,42 @@ class UNet_mod(nn.Module):
     self.up2 = up(512,256)
     self.up3 = up(256,128)
     self.up4 = up(128,64)
-    self.out = outconv(64,n_class)
+    self.out = outconv(64,self.n_class)
   
   def forward(self, x):
-    x1 = self.inc(x)
-    x2 = self.down1(x1)
-    x3 = self.down2(x2)
-    x4 = self.down3(x3)
-    x5 = self.down4(x4)
-    
-    x = self.up1(x5,x4)
-    x = self.up2(x,x3)
-    x = self.up3(x,x2)
-    x = self.up4(x,x1)
-    logits = self.out(x)
-    
+    if self.fake_ce: 
+      x1 = self.inc(x)
+      x2 = self.down1(x1)
+      x3 = self.down2(x2)
+      x4 = self.down3(x3)
+
+      x = self.up2(x4,x3)
+      x = self.up3(x,x2)
+      x = self.up4(x,x1)
+      logits = self.out(x)
+
+    else:
+      x1 = self.inc(x)
+      x2 = self.down1(x1)
+      x3 = self.down2(x2)
+      x4 = self.down3(x3)
+      x5 = self.down4(x4)
+      
+      x = self.up1(x5,x4)
+      x = self.up2(x,x3)
+      x = self.up3(x,x2)
+      x = self.up4(x,x1)
+      logits = self.out(x)
+
     return logits
 
 # if __name__ == '__main__': 
-#   os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+#   os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 #   print('*********************Model Summary***********************')
-#   model = UNet_mod(n_channels=19, n_class = 19) 
+#   model = UNet_mod(n_channels=19, n_class = 19, fake_ce = True) 
 #   if torch.cuda.is_available(): 
 #     model = model.cuda()
 
-#   print(summary(model, (19, 1920, 1080))) 
+#   print(summary(model, (19, 512, 512))) 
+## original 

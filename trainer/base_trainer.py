@@ -7,6 +7,7 @@ from dataset import dataset
 from tqdm import tqdm
 import numpy as np
 import torch.nn.functional as F
+from dataset.network.dannet_pred import pred 
 class BaseTrainer(object):
     def __init__(self, models, optimizers, loaders, up_s, up_t, config,  writer):
         self.model = models
@@ -17,6 +18,7 @@ class BaseTrainer(object):
         self.up_src = up_s
         self.up_tgt = up_t
         self.writer = writer
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
 
     def forward(self):
         pass
@@ -213,22 +215,66 @@ class BaseTrainer(object):
             b, c, h, w = img.shape
             # print(img.shape)
             # print('********')
-            # interp = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)  #original eval 
-            seg_pred = self.model(img.cuda())
+            interp = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)  
+            # original eval 
+            # interp = nn.Upsample(size=(1024, 2048), mode='bilinear', align_corners=True) 
+            ## dannet pred..to get tensor predictions 
+
+            model = self.da_model.eval()
+            lightnet = self.lightnet.eval()
+            weights = self.weights
+
+            with torch.no_grad():
+                r = lightnet(img.cuda())
+                enhancement = img.cuda() + r
+                if model == 'RefineNet':
+                    output2 = model(enhancement)
+                else:
+                    _, output2 = model(enhancement)
+
+            weights_prob = weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
+            weights_prob = weights_prob.transpose(1, 3)
+            output2 = output2 * weights_prob
+            # img = output2 
+            # print(output2.shape) # torch.Size([4, 19, 65, 65]) 
+            output2 = interp(output2).cpu().numpy() ## we have to upsample it...
+            # print(output2.shape) # (4, 19, 512, 512) 
+            # print('*****************') 
+            img = torch.tensor(output2)
+            ## dannet pred 
+            if self.config.one_hot: 
+                ## one_hot_conversion.... 
+                nc = img.shape[1]
+                img = torch.argmax(img, dim=1)
+                img = F.one_hot(img, num_classes=nc)
+                img = img.transpose(3,2).transpose(2,1) 
+                # one_hot_conversion....
+                seg_pred = self.model(img.float().cuda())  ## one hot input
+            else:
+                seg_pred = self.model(F.softmax(img.cuda(), dim=1)) ## mod.....resize@@@@             
             # seg_pred = interp(seg_pred).squeeze(dim=1)  # #original eval
             # print(seg_pred.shape, seg_label.shape)
             loss = CrossEntropy2d()
 
-            # seg_pred = F.softmax(seg_pred, dim=1)  ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy ## not using 
+            if self.config.fake_ce and self.config.real_en: 
+                loss2 = entropymax()
+                seg_loss = loss(seg_pred, seg_label) + loss2(seg_pred, seg_label)        
 
-            ##### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
-            # post = seg_pred * img.cuda().detach() ## not going backwards so...no worry here not require to use detach
-            post = seg_pred * img.cuda() ## causing currently using pred label to gt label exp....
+            elif self.config.fake_ce and not self.config.real_en:
+                seg_loss = loss(seg_pred, seg_label)
+                # print('**********')
 
-            # post = F.softmax(post, dim=1) ## not using 
+            else: 
+                # seg_pred = F.softmax(seg_pred, dim=1)  ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy ## not using 
 
-            # seg_loss = loss(seg_pred, seg_label) ## original
-            seg_loss = loss(post, seg_label) # posterior MAP estimate
+                ##### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
+                post = seg_pred * img.cuda().detach() ## not going backwards so...no worry here not require to use detach
+                # post = seg_pred * img.cuda() ## causing currently using pred label to gt label exp....
+
+                # post = F.softmax(post, dim=1) ## not using 
+        
+                # seg_loss = loss(seg_pred, seg_label) ## original
+                seg_loss = loss(post, seg_label) # posterior MAP estimate    
             total_loss += seg_loss.item()
         total_loss /= len(iter(testloader))
         print('---------------------')
@@ -238,10 +284,11 @@ class BaseTrainer(object):
 
 class CrossEntropy2d(nn.Module):
 
-    def __init__(self, size_average=True, ignore_label=255):
+    def __init__(self, size_average=True, ignore_label=255, real_label=100):
         super(CrossEntropy2d, self).__init__()
         self.size_average = size_average
         self.ignore_label = ignore_label
+        self.real_label = real_label
 
     def forward(self, predict, target, weight=None):
         """
@@ -258,7 +305,7 @@ class CrossEntropy2d(nn.Module):
         assert predict.size(2) == target.size(1), "{0} vs {1} ".format(predict.size(2), target.size(1))
         assert predict.size(3) == target.size(2), "{0} vs {1} ".format(predict.size(3), target.size(3))
         n, c, h, w = predict.size()
-        target_mask = (target >= 0) * (target != self.ignore_label)
+        target_mask = (target >= 0) * (target != self.ignore_label) * (target!= self.real_label) 
         target = target[target_mask]
         predict = predict.transpose(1, 2).transpose(2, 3).contiguous()
         predict = predict[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
@@ -293,3 +340,23 @@ class WeightedFocalLoss(nn.Module):
         # print('^^^^^^^^^^^^')
         F_loss = at*(1-pt)**self.gamma * BCE_loss
         return F_loss.mean()
+
+class entropymax(nn.Module): 
+    def __init__(self, real_label = 100):
+        super(entropymax, self).__init__()
+        self.real_label = real_label
+    
+    def forward(self, inputs, targets):
+        ## mask creation.. 
+        target_mask = (targets == self.real_label)  ## binary mask for the region where the actual real is there
+        ## mask creation..
+        n, c, h, w = inputs.size()
+        inputs = inputs.transpose(1, 2).transpose(2, 3).contiguous() ## input shape --> (n, h, w, c)
+        # inputs = inputs[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
+        inputs = inputs[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
+        # print(inputs.shape)
+        # print(inputs.shape)  # torch.Size([0]) ....wrong brother
+        # inputs = inputs + 1e-16 # for numerical stability while taking log 
+        output = F.softmax(inputs, dim=1) * F.log_softmax(inputs, dim=1)  
+        loss = torch.mean(torch.sum(output, dim=1))  ## just loss = output.sum()
+        return loss  

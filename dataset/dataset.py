@@ -94,8 +94,8 @@ def init_source_dataset(cfg, plabel_path=None, selected=None, fuse=False, source
         cfg.num_classes=16
     else:
         cfg.num_classes=19
-    cfg.source_size = source_env.input_size
-    cfg.target_size = target_env.input_size
+    # cfg.source_size = source_env.input_size
+    # cfg.target_size = target_env.input_size
     cfg.source_data_dir  = source_env.data_dir
     cfg.source_data_list = source_env.data_list
     cfg.target_data_dir  = target_env.data_dir
@@ -128,8 +128,17 @@ def init_source_dataset(cfg, plabel_path=None, selected=None, fuse=False, source
 
     if source_list is None:
         source_list = source_env.data_list
+    ## orginal
+    # trainloader = data.DataLoader(
+    #         BaseDataSet(source_env.data_dir, source_list, cfg.source, cfg.num_classes,
+    #                     max_iters=cfg.num_steps*cfg.batch_size,
+    #                     joint_transform =  source_joint_transform,
+    #                     transform = train_transform,
+    #                     label_transform = label_transform,
+    #                     set='train'),
+    #         batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.worker, pin_memory=True)
     trainloader = data.DataLoader(
-            BaseDataSet(source_env.data_dir, source_list, cfg.source, cfg.num_classes,
+            BaseDataSet(cfg, source_env.data_dir, source_list, cfg.source, cfg.num_classes,
                         max_iters=cfg.num_steps*cfg.batch_size,
                         joint_transform =  source_joint_transform,
                         transform = train_transform,
@@ -211,14 +220,21 @@ def init_test_dataset(config, dataset_name, set, selected=None, prop=None, label
         label_transform = [transforms.ResizeLabel((2048, 1024)),
                 transforms.MaskToTensor()]
         label_transform = standard_transforms.Compose(label_transform)
-    elif dataset_name == 'acdc_val_label':
-        joint_transform = None 
-        label_transform = transforms.MaskToTensor() 
     else:
         label_transform = transforms.MaskToTensor()
 
+    ## original
+    # targetloader = data.DataLoader(
+    #         BaseDataSet(env.data_dir, data_list, dataset_name, config.num_classes, 
+    #                     joint_transform =  joint_transform,
+    #                     transform = train_transform,
+    #                     label_transform = label_transform,
+    #                     max_prop=max_prop,
+    #                     selected=selected,
+    #                     set=set),
+    #         batch_size=batchsize, shuffle=False, num_workers=4, pin_memory=True)
     targetloader = data.DataLoader(
-            BaseDataSet(env.data_dir, data_list, dataset_name, config.num_classes, 
+            BaseDataSet(config, env.data_dir, data_list, dataset_name, config.num_classes, 
                         joint_transform =  joint_transform,
                         transform = train_transform,
                         label_transform = label_transform,

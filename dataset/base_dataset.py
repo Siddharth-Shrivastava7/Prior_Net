@@ -13,12 +13,14 @@ from . import joint_transforms
 from torch.nn import functional as F 
 import random
 from torchvision import transforms 
+# from .network import dannet_pred
+# from .network.dannet_pred import pred
 
 ## one caveat with TF.to_tensor...that it convert the value of the image between 0 and 1 
 
 
 class BaseDataSet(data.Dataset):
-    def __init__(self, root, list_path,dataset, num_class,  joint_transform=None, transform=None, label_transform = None, max_iters=None, ignore_label=255, set='val', plabel_path=None, max_prop=None, selected=None,centroid=None, wei_path=None):
+    def __init__(self, cfg, root, list_path,dataset, num_class,  joint_transform=None, transform=None, label_transform = None, max_iters=None, ignore_label=255, set='val', plabel_path=None, max_prop=None, selected=None,centroid=None, wei_path=None):
         
         self.root = root
         self.list_path = list_path
@@ -30,6 +32,9 @@ class BaseDataSet(data.Dataset):
         self.label_transform = label_transform
         self.plabel_path = plabel_path
         self.centroid = centroid
+        self.cfg = cfg
+
+        # print(')))))')
 
         # if self.set !='train':
         #     self.list_path = (self.list_path).replace('train', self.set)
@@ -48,7 +53,6 @@ class BaseDataSet(data.Dataset):
         if not max_iters==None:
             # print(len(self.img_ids))
             # self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids))) #org
-            # print(len(self.img_ids))
             # print(len(self.img_ids))
             pass
 
@@ -179,16 +183,14 @@ class BaseDataSet(data.Dataset):
                 })
 
         elif dataset == 'darkzurich':
-            if self.plabel_path is None:
-                label_root = ''
-            else:
-                label_root = self.plabel_path 
             for name in self.img_ids:
                 img_file = osp.join(self.root, "rgb_anon/%s_rgb_anon.png" % (name))
-                if self.plabel_path is None:
-                    label_file = []
-                else:
-                    label_file =osp.join(label_root, '%s_gt_labelIds.png' % (name))               
+                label_root = '/home/sidd_s/scratch/data_hpc/data/dark_zurich_val/gt'
+                if self.cfg.uncertain: 
+                    label_file =osp.join(label_root, '%s_gt_label_valid_TrainIds.png' % (name)) 
+                    # label_file =osp.join(label_root, '%s_gt_label_inv_TrainIds.png' % (name))  # here ignoring the uncertain regions 
+                else: 
+                    label_file =osp.join(label_root, '%s_gt_labelTrainIds.png' % (name))   ## original     
                 self.files.append({
                     "img": img_file,
                     "label":label_file,
@@ -390,35 +392,91 @@ class BaseDataSet(data.Dataset):
 
         elif dataset == 'acdc_train_label' or dataset == 'acdc_val_label':
             for name in self.img_ids:
-                nm = name.split('/')[-1] 
-                im_save = self.set + '_pred_dannet'
-                img_file = osp.join(self.root,im_save, nm)
+                img_file = osp.join(self.root, name)
 
                 replace = (("_rgb_anon", "_gt_labelTrainIds"), ("acdc_trainval", "acdc_gt"), ("rgb_anon", "gt"))
                 nm = name
                 for r in replace: 
                     nm = nm.replace(*r)  
-                root = '/home/sidd_s/scratch/data_hpc/data'
-                label_file = osp.join(root, nm) 
+                if self.cfg.uncertain:
+                    nm = nm.replace('_gt_labelTrainIds', '_gt_label_validinv_TrainIds') 
+                label_file = osp.join(self.root, nm) 
+                # print(label_file)
                 self.files.append({
                     "img": img_file,
                     "label":label_file,
                     "name": name
                 })
         
-        elif dataset == 'dz_val_tensor_gt':
+        elif dataset == 'dz_val_tensor':
             for name in self.img_ids:
                 if 'dannet_pred' not in name:
                     nm = name.split('/')[-1].replace('_gt_labelColor.png', '_rgb_anon.pt')
                     img_save = '/home/sidd_s/scratch/saved_models_hpc/saved_models/DANNet/dz_val/tensor_pred'
                     img_file = osp.join(img_save, nm)
                     nm = name.replace('_gt_labelColor.png','_gt_labelTrainIds.png')
-                    label_file = osp.join(img_file, nm)
+                    label_file = osp.join(self.root, nm)
+                    # print(label_file)
+                    # print('***************')
+                    # print(img_file)
+                    # break
                     self.files.append({
                     "img": img_file,
                     "label":label_file,
                     "name": name
                     })
+
+        elif dataset in ['city_dark_img_tensor', 'city_dark_img_tensor_val']:
+            for name in self.img_ids:
+                img_file = osp.join(self.root, 'black_out_' + self.set , name)
+                label_file = osp.join(self.root, 'gtFine', self.set, name.replace('_leftImg8bit', '_gtFine_labelIds'))
+                # print(label_file)
+                # print('***************')
+                # print(img_file)
+                # break
+                self.files.append({
+                    "img": img_file, 
+                    "label": label_file, 
+                    "name": name
+                })
+        
+        elif dataset in ['acdc_city_dark', 'acdc_city_dark_val']:
+            for name in self.img_ids:
+                img_file = osp.join(self.root, self.set, 'img', name)
+                label_file = osp.join(self.root, self.set, 'gt', name.replace('_leftImg8bit.png','_gtFine_labelIds.png'))
+                self.files.append({
+                    "img": img_file, 
+                    "label": label_file, 
+                    "name": name
+                })
+        
+        elif dataset in ['acdc_fake_ce_train', 'acdc_fake_ce_val']:
+            for name in self.img_ids:
+                img_file = osp.join(self.root, name)
+                nm = name.split('/')[-1].replace('_rgb_anon.png', '_gt_labelTrainIds.png') 
+                label_path = '/home/sidd_s/scratch/data/acdc_gt/acdc_fake_ce_' + self.set
+                label_file = osp.join(label_path, nm)
+                self.files.append(
+                    {
+                        "img": img_file,
+                        "label": label_file,
+                        "name": name
+                    }
+                )
+
+        elif dataset in ['acdc_fake_ce_real_en_train', 'acdc_fake_ce_real_en_val']:
+            for name in self.img_ids:
+                img_file = osp.join(self.root, name)
+                nm = name.split('/')[-1].replace('_rgb_anon.png', '_gt_labelTrainIds.png') 
+                label_path = '/home/sidd_s/scratch/data/acdc_gt/acdc_fake_ce_real_en_' + self.set
+                label_file = osp.join(label_path, nm)
+                self.files.append(
+                    {
+                        "img": img_file,
+                        "label": label_file,
+                        "name": name
+                    }
+                )             
 
     def __len__(self):
         return len(self.files)
@@ -574,13 +632,13 @@ class BaseDataSet(data.Dataset):
 
             #     label = Image.fromarray(label.astype(np.uint8))
                 
-            elif self.dataset == 'darkzurich' and self.plabel_path is None: # trg no gt labels
-                # print(self.dataset)
-                image = Image.open(datafiles["img"]).convert('RGB')
-                label = []
+            # elif self.dataset == 'darkzurich' and self.plabel_path is None: # trg no gt labels
+            #     # print(self.dataset)
+            #     image = Image.open(datafiles["img"]).convert('RGB')
+            #     label = []
             
             ## tensor to gt label (for end to end learning)
-            elif self.dataset == 'acdc_train_tensor' or self.dataset == 'acdc_val_tensor':
+            elif self.dataset == 'acdc_train_tensor' or self.dataset == 'acdc_val_tensor' or self.dataset=='dz_val_tensor':
                 if self.set == 'val': 
                     # print('&&&&&&&&&&&')
                     # x = [] 
@@ -610,8 +668,8 @@ class BaseDataSet(data.Dataset):
                     ## original size eval...let see...if its tooo slow then resize the image here ...cause now using cross entropy loss of pytorch not nll...
                 
                     ### modified...val 
-                    image = torch.tensor(torch.load(datafiles["img"]))
-                    image = image.transpose(2,0).transpose(1,2) 
+                    image = torch.tensor(torch.load(datafiles["img"])) 
+                    image = image.transpose(2,0).transpose(1,2) ## original
                     
                     label = Image.open(datafiles['label'])
                     label = torch.tensor(np.array(label))
@@ -659,18 +717,18 @@ class BaseDataSet(data.Dataset):
                     image = torch.load(datafiles["img"]) 
                     image = image.transpose(2,0,1)
                     label = Image.open(datafiles['label']) 
-                    i, j, h, w = transforms.RandomCrop.get_params(
-                                    label, output_size=(512, 512))
+                    # i, j, h, w = transforms.RandomCrop.get_params(
+                    #                 label, output_size=(512, 512))
                 
                     for ch in image:
                         ch = Image.fromarray(ch) 
-                        # ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)  
-                        ch = TF.crop(ch, i,j ,h,w)
+                        ch = TF.resize(ch, (512, 512), interpolation = Image.NEAREST)  
+                        # ch = TF.crop(ch, i,j ,h,w)
                         x.append(torch.tensor(np.array(ch))) 
                     image = torch.stack(x, dim = 0)
 
-                    label = TF.crop(label, i, j, h, w) 
-                    # label = TF.resize(label, (512, 512), interpolation = Image.NEAREST)
+                    # label = TF.crop(label, i, j, h, w) 
+                    label = TF.resize(label, (512, 512), interpolation = Image.NEAREST)
                     label = torch.tensor(np.array(label))
                     label = label.squeeze(dim=0)
                     ### Modified for train.... 
@@ -717,15 +775,126 @@ class BaseDataSet(data.Dataset):
                 if self.transform is not None:
                     image = self.transform(image)
             
-            elif self.dataset in ['acdc_train_label', 'acdc_val_label']:  ## check this, once ..........................
-                image = Image.open(datafiles["img"]).convert('RGB')
-                label = Image.open(datafiles["label"]) 
-                if self.joint_transform is not None:
-                    image, label = self.joint_transform(image, label, None)
-                if self.label_transform is not None:
-                    label = self.label_transform(label)
-                if self.transform is not None:
-                    image = self.transform(image)
+            elif self.dataset in ['acdc_train_label', 'acdc_val_label', 'acdc_fake_ce_val', 'acdc_fake_ce_train', 'acdc_city_dark', 'acdc_city_dark_val', 'darkzurich', 'acdc_fake_ce_real_en_train', 'acdc_fake_ce_real_en_val']:  ## check this, once ..........................
+                
+                mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  ## image net mean and std 
+
+                if self.set=='val':
+                    
+                    transforms_compose_img = transforms.Compose([
+                        transforms.Resize((540, 960)),
+                        transforms.ToTensor(),
+                        transforms.Normalize(*mean_std) 
+                    ])
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+                    image = transforms_compose_img(image)    
+                    image = torch.tensor(np.array(image)).float() 
+                    # image = image.transpose(2,0).transpose(1,2) ## not required when using transforms 
+
+                    # print('*****************************')
+
+                    transforms_compose_label = transforms.Compose([
+                        transforms.Resize((1080,1920), interpolation=Image.NEAREST)])
+                    # print('*****************************') 
+                    label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label)
+
+                    if self.dataset in ['acdc_city_dark_val']:
+                        label = np.array(label, dtype=np.uint8)
+                        label_copy = 255 * np.ones(label.shape, dtype=np.uint8)
+                        for k, v in self.id2train.items():
+                            label_copy[label == k] = v
+                        label = torch.tensor(np.array(label_copy))
+                    else:
+                        label = torch.tensor(np.array(label)) 
+                    # print(label.shape)
+                
+                else:
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+                    # transforms_compose_img = transforms.Compose([transforms.Resize((512,512)), transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.2), transforms.ToTensor(), transforms.Normalize(*mean_std)])  
+
+                    transforms_compose_img = transforms.Compose([transforms.Resize((512,512)), transforms.ToTensor(), transforms.Normalize(*mean_std)])   ## no random gittering in exp3 models...performing better than the 
+
+                    img_trans = transforms_compose_img(image) 
+                    # print(img_trans)
+                    image = torch.tensor(np.array(img_trans)).float()
+                    # print(image.shape)
+                    # image = image.transpose(2,0).transpose(1,2)  ## not required when using transforms 
+                    # print(image.shape)  #torch.Size([3, 512, 512])   
+                    # print('*******')
+
+                    transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)])
+
+                    label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label)
+
+                    if self.dataset in ['acdc_city_dark']:
+                        label = np.array(label, dtype=np.uint8)
+                        label_copy = 255 * np.ones(label.shape, dtype=np.uint8)
+                        for k, v in self.id2train.items():
+                            label_copy[label == k] = v
+                        label = torch.tensor(np.array(label_copy))
+                    else:
+                        label = torch.tensor(np.array(label)) 
+                    # print(label.shape) # torch.Size([512, 512]) 
+
+            elif self.dataset in ['city_dark_img_tensor', 'city_dark_img_tensor_val']:
+                if self.set=='val':
+                    transforms_compose = transforms.Compose([transforms.Resize((1080,1920),interpolation=Image.NEAREST)])
+                    
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+                    image = transforms_compose(image)   
+                    image = torch.tensor(np.array(image)).float()
+                    image = image.transpose(2,0).transpose(1,2)  
+                      
+                    
+                    # label = np.array(Image.open(datafiles["label"]), dtype = np.uint8) 
+                    label = Image.open(datafiles["label"]) 
+                    label = transforms_compose(label) 
+                    label = np.array(label, dtype=np.uint8)
+                    label_copy = 255 * np.ones(label.shape, dtype=np.uint8)
+                    for k, v in self.id2train.items():
+                        label_copy[label == k] = v
+                    label = torch.tensor(np.array(label_copy)) 
+                else: 
+                    # print('**************')
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+                    transforms_compose = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST), transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.2)])
+                    # transforms_compose_img = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST), transforms.ToTensor(), transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])  ## resize, normlising
+                    # img_trans = transforms_compose_img(image) 
+                    img_trans = transforms_compose(image) 
+                    # print('**************')
+                    # print(img_trans)
+                    # print(img_trans.shape)  # torch.Size([3, 512, 512])
+                    image = torch.tensor(np.array(img_trans)).float()
+                    image = image.transpose(2,0).transpose(1,2)  
+                    # image = img_trans
+                    # print(image.shape) # torch.Size([3, 512, 512])
+                    # print('**************')
+                    # print(torch.unique(image))
+                    
+                    # transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)])
+                    label = Image.open(datafiles["label"]) 
+                    # print(np.array(label).shape)
+                    # print(np.max(label))
+                    # label_trans = transforms_compose_label(label) 
+                    label_trans = transforms_compose(label) 
+                    # print(np.array(label_trans).shape) # (512, 512)
+                    # print(np.max(label_trans)) 
+                    # print(np.unique(label_trans))
+                    # print(np.array(label_trans))
+                    label_trans = np.array(label_trans, dtype = np.uint8) 
+                    label_copy = 255 * np.ones(label_trans.shape, dtype=np.uint8) 
+                    # print('**************')  
+                    for k, v in self.id2train.items():
+                        # print(k,v)
+                        # print(label_trans==k)
+                        label_copy[label_trans == k] = v
+                        # print(label_copy[label_trans == k]) 
+                    # print('**************')  
+                    label = torch.tensor(np.array(label_copy))
+                    # print(torch.unique(label))   
+                    # print(label.shape) # torch.Size([512, 512])
 
             else:
                 image = Image.open(datafiles["img"]).convert('RGB')

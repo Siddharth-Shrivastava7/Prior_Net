@@ -17,7 +17,8 @@ from PIL import Image
 import json
 import torchvision
 import cv2
-
+from dataset.network.dannet_pred import pred
+from utils.calibrationmetrics import *
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -28,12 +29,12 @@ def get_arguments():
     parser = argparse.ArgumentParser(description="DeepLab-ResNet Network")
     parser.add_argument("--ignore-label", type=int, default=255)
     parser.add_argument("--num-classes", type=int, default=19)
-    parser.add_argument("--num-channels", type=int, default=3)
-    parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_predlabel.pth')
+    parser.add_argument("--num-channels", type=int, default=19)
+    parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_resize_mod.pth')
     parser.add_argument("--start", type=int, default=1)
-    parser.add_argument("--dataset", type=str, default='acdc_val_label')
-    # parser.add_argument("--single", action='store_true')
-    parser.add_argument("--model", default='unet')
+    parser.add_argument("--dataset", type=str, default='darkzurich')
+    parser.add_argument("--model", default='unet') 
+    parser.add_argument("--calibrationcalc", action='store_true')
     return parser.parse_args()
 
 def print_iou(iou, acc, miou, macc):
@@ -41,7 +42,7 @@ def print_iou(iou, acc, miou, macc):
         print('===> {0:2d} : {1:.2%} {2:.2%}'.format(ind_class, iou[ind_class, 0].item(), acc[ind_class, 0].item()))
     print('mIoU: {:.2%} mAcc : {:.2%} '.format(miou, macc))
 
-def compute_iou(model, testloader, args):
+def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
     model = model.eval()
 
     interp = nn.Upsample(size=(1080,1920), mode='bilinear', align_corners=True)   # dark_zurich -> (1080,1920)
@@ -50,6 +51,9 @@ def compute_iou(model, testloader, args):
     preds = torch.zeros(args.num_classes, 1, dtype=torch.float).cuda().float()
     # extra 
     gts = torch.zeros(args.num_classes, 1, dtype=torch.float).cuda().float()
+
+    logits_list = []
+    labels_list = []
     # 2nd best 
     # totalp = 0
     # Tp = 0  
@@ -57,78 +61,240 @@ def compute_iou(model, testloader, args):
         for index, batch in tqdm(enumerate(testloader)):
             # print('******************') 
             image, label, edge, _, name = batch
+            # print(image.shape)
 #            edge = F.interpolate(edge.unsqueeze(0), (512, 1024)).view(1,512,1024)``
             # print(name)
             # if name[0].find('dannet_pred')==-1: 
             #     continue
             # print(name)
-            output =  model(image.cuda())
+            # image = F.softmax(image,dim=0)  ## don't use...if you have not used in training time......
+            
+            interp = nn.Upsample(size=(1080, 1920), mode='bilinear', align_corners=True)
+            da_model = da_model.eval()
+            lightnet = lightnet.eval()
+
+            with torch.no_grad():
+                r = lightnet(image.cuda())
+                enhancement = image.cuda() + r
+                if model == 'RefineNet':
+                    output2 = da_model(enhancement)
+                else:
+                    _, output2 = da_model(enhancement)
+
+            weights_prob = weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
+            weights_prob = weights_prob.transpose(1, 3)
+            output2 = output2 * weights_prob
+            output2 = interp(output2).cpu().numpy()
+
+            image = torch.tensor(output2)
+
+            ### calibration 
+            if args.calibrationcalc:
+                # print('*****')
+                logits_list.append(image) 
+                labels_list.append(label)
+                logits = torch.cat(logits_list).cuda() 
+                labels = torch.cat(labels_list).cuda()   
+                # print(logits.shape) 
+                # print('*********')
+                # print(labels.shape)
+                continue
+
+            # print('oooooooo') ## yes this is not coming while calibrationcalc
+            
+            ## pred label of dannet......for prediction
+
+            # img = torch.argmax(image, dim=1)
+            # # print(img.shape)
+            # img = label_img_to_color(img.squeeze().cpu().numpy())
+            # img = torch.tensor(img)
+
+            ### pred label....
+
+            ### one_hot_conversion.... 
+            # img = image
+            # nc = img.shape[1]
+            # img = torch.argmax(img, dim=1)
+            # img = F.one_hot(img, num_classes=nc)
+            # # print(img.shape) # torch.Size([12, 512, 512, 19]) 
+            # img = img.transpose(3,2).transpose(2,1) 
+            # print(img.shape) # torch.Size([12, 19, 512, 512])
+            ### one_hot_conversion.... 
+
+            output =  model(F.softmax(image.cuda(),dim=1))      
+            # output = model(img.float().cuda())  ## one hot input
+            # output = model(img.cuda())
+            # output = model(F.softmax(img.float().cuda(), dim = 1)) 
             label = label.cuda()
-            # print('label shape:{} output shape:{}'.format(label.shape, output.shape))
-            # output = interp(output).squeeze()
-            # output = output.squeeze()
-            # save_pred(output, './save/dark_zurich_val/btad', args.dataset +str(index)+'.png') # org
-            # print(name[0])
-            name =name[0].split('/')[-1] 
-            # save_pred(output, '../scratch/data/try', name)  # current org # now not save
 
-            # output = image.cuda() 
-            # output = output.squeeze()
-            # C = 2
-            # print(output.shape)
-            # print('**********')
-            # H, W = output.shape
-            # C, H, W = output.shape # original
-            # print('[*****]')
-            # print(C)
-            # print(torch.unique(output))
-            # print(torch.unique(torch.argmax(output, dim = 0)))
-
-
-            ### posterior MAP evaluation....
             output = output.squeeze()
-            image = image.squeeze()
+            image = image.squeeze() 
             # print(image.shape) # torch.Size([19, 1080, 1920]) 
             # print(output.shape) # torch.Size([19, 1080, 1920])
-            C,H,W = output.shape
+            C,H,W = output.shape 
             # posterior = output * image.cuda()  ## it's logits....which usually have taken to go through cross entropy loss...
             # posterior = F.softmax(posterior, dim=0)
-            # print(label.shape) # ([1, 1080, 1920])
-            # print('**************')
-            # print(torch.unique(label)) ## wtf....how 0 and 1 only......due to TF functinon of to_tensor...not going to use that now
-            # print(image.shape) # torch.Size([19, 1080, 1920])
-            # print('********')
-            # print(torch.unique(image)) # sort of logits from proba distri...  since then Dannet has done a post processing step where they multiplied with weight matrices in order to get more appro results...but since they are doing the argmax so...i am taking it as it is
-            # print(output.shape) # torch.Size([19, 1080, 1920])
-            # print('********') 
-            # print(torch.unique(output)) # logits 
+        
+            # if args.calibration: 
+            #     ## make reliability plot ... 
+            #     image_arr = np.array(image)
+            #     label_arr = np.array(label)
+            #     for i in range(1,11):
+            #         indices = image_arr[0<image_arr<0.1]
+                    
 
-            ### posterior MAP evaluation....
+            #     ## confidences with 0 to 1 with gap of 0.1 
+            #     continue
+            
+
+            if fake_ce:
+                # print('************')
+                # seg_loss = loss(output, label) 
+                ### to add the evaluation.... 
+                # print('will do') 
+
+                # output = F.softmax(output, dim=0)
+                # image = F.softmax(image, dim= 0)
+
+                # entropy_prior = -torch.sum(output*torch.log(output), dim=0)
+                entropy_prior = -torch.sum(F.softmax(output, dim=0) * F.log_softmax(output, dim=0), dim=0) 
+                entropy_max = np.max(np.array(entropy_prior.cpu()))
+                entropy_min = np.min(np.array(entropy_prior.cpu()))
+                # print(entropy_max)
+                # print(entropy_min) 
+                entropy_prior = entropy_prior / entropy_max 
+                # entropy_max = np.max(np.array(entropy_prior.cpu()))
+                # entropy_min = np.min(np.array(entropy_prior.cpu()))
+                # print(entropy_max)  # 1 
+                # print(entropy_min)  # 0.89 
+                # entropy_prior = F.softmax(entropy_prior, dim=0)
+                # entropy_max = np.min(np.array(entropy_prior.cpu()))
+                # print(entropy_max) # nan....
+                # threshold entropy_map # not helping much
+                # entropy_prior[entropy_prior>=0.4] = 1
+                # entropy_prior[entropy_prior<0.4] = 0
+
+                entropy_liki = -torch.sum(F.softmax(image.cuda(), dim=0) * F.log_softmax(image.cuda(), dim=0), dim=0)
+                entropy_max_l = np.max(np.array(entropy_liki.cpu()))
+                entropy_liki = entropy_liki / entropy_max_l
+
+                name =name[0].split('/')[-1] 
+                en_prior = np.array(255* entropy_prior.cpu()) 
+                en_prior = Image.fromarray(en_prior).convert('L')
+                # print(en_prior.shape)  # (1080, 1920) 
+                en_prior.save('../scratch/data/e2e_pred/unet_e2e_resize_mod_entropyprior/' + name + '.png') 
+
+                # print(np.max(np.array(entropy_prior.cpu()))) # nan.....ok..error..
+                # output = F.softmax(output, dim=0) 
+                # image = F.softmax(image, dim=0)
+                # posterior = F.log_softmax(output, dim=0)  + F.log_softmax(image.cuda(),dim=0)
+
+                lamb = 0.5
+                # posterior = lamb* F.log_softmax(output, dim=0)  +  F.log_softmax( image.cuda(),dim=0)
+                posterior = lamb* entropy_liki * F.log_softmax(output, dim=0)  +   F.log_softmax(image.cuda(),dim=0)  
+                # posterior = lamb* F.log_softmax( (1-entropy_prior) * output, dim=0)  + F.log_softmax(image.cuda(),dim=0)
+                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( entropy_prior * image.cuda(),dim=0) 
+                # posterior = lamb* entropy_liki * F.log_softmax(output, dim=0)  +   F.log_softmax( (1-entropy_liki) * image.cuda(),dim=0)
+                # posterior = lamb* (1-entropy_liki) * F.log_softmax(output, dim=0)  +   F.log_softmax( (1-entropy_prior) * image.cuda(),dim=0)
+                # output = F.log_softmax( (1-entropy_prior) * output, dim=0)
+
+                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( (1-entropy_liki) * image.cuda(),dim=0)
+                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( image.cuda(),dim=0)
+                # print('*************')
+                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( image.cuda(),dim=0)
+                # posterior = lamb * (1-entropy_prior) * output + image.cuda()
+                # posterior = torch.log((1-entropy_prior) * output) + torch.log(image.cuda())
+                # posterior = (1-entropy_prior) * output * image.cuda()
+                # posterior = output * image.cuda()
+
+            else: 
+                # print('label shape:{} output shape:{}'.format(label.shape, output.shape))
+                # output = interp(output).squeeze()
+                # output = output.squeeze()
+                name = name[0].split('/')[-1] 
+                # print('****************') 
+                # print(output.shape)
+                # dannet_pred = output.argmax(dim=0).float()
+                # print(name[0].split('/')[-1])
+
+                # output = image.cuda() 
+                # output = output.squeeze()
+                # C = 2
+                # print(output.shape)
+                # print('**********')
+                # H, W = output.shape
+                # C, H, W = output.shape # original
+                # print('[*****]')
+                # print(C)
+                # print(torch.unique(output))
+                # print(torch.unique(torch.argmax(output, dim = 0)))
+
+                ### posterior MAP evaluation....
+                ##this is working better... not always not working better for fake ce and real en
+                # output = F.softmax(output, dim=0)  
+                # image = F.softmax(image, dim=0)
+                # posterior = output * image.cuda() ## output...if softmax...then seeing...cause image itself is taken proba distribut
+                ## this is working better..
+
+                ### another change 
+                # image = F.softmax(image,dim=0)  ## we will use it....but first applying it on top of the model...(if not used during training then it doesn't worked)
+                # output = F.softmax(output, dim=0) 
+                # posterior = output * image.cuda() 
+                lamb = 1 ## 0.96 for fake_ce and real_en 
+                posterior = lamb * F.log_softmax(output, dim=0)  + F.log_softmax(image.cuda(),dim=0)
+                # posterior = lamb* output + image.cuda() 
+                # posterior = output * image.cuda()
+                # post = posterior.argmax(dim=0).float()  
+                # save_pred(post, '../scratch/data/e2e_pred/unet_e2e_resize_mod_post',  name + '.png') # org
+                # posterior = lamb * output * image.cuda() 
+                ### another change 
+
+                ### another change
+                # image = F.log_softmax(image,dim=0)  ## we will use it...but first applying it on top of the model...(if not used during training then it doesn't worked)
+                # output = F.log_softmax(output, dim=0) 
+                
+                # posterior = output + image.cuda() 
+                ### another change
+                
+                # print(label.shape) # ([1, 1080, 1920])
+                # print('**************')
+                # print(torch.unique(label)) ## wtf....how 0 and 1 only......due to TF functinon of to_tensor...not going to use that now
+                # print(image.shape) # torch.Size([19, 1080, 1920])
+                # print('********')
+                # print(torch.unique(image)) # sort of logits from proba distri...  since then Dannet has done a post processing step where they multiplied with weight matrices in order to get more appro results...but since they are doing the argmax so...i am taking it as it is
+                # print(output.shape) # torch.Size([19, 1080, 1920])
+                # print('********') 
+                # print(torch.unique(output)) # logits 
+
+                ### posterior MAP evaluation....
 
             #########################################################################original
             Mask = (label.squeeze())<C  # it is ignoring all the labels values equal or greater than 2 #(1080, 1920) 
             pred_e = torch.linspace(0,C-1, steps=C).view(C, 1, 1)  
             pred_e = pred_e.repeat(1, H, W).cuda() 
-            # pred = output.argmax(dim=0).float()
-            pred = posterior.argmax(dim=0).float()
-            # pred = image.argmax(dim=0).float().cuda()
-            # pred = output.float()
-            pred_mask = torch.eq(pred_e, pred).byte() 
-            pred_mask = pred_mask*Mask
+            # print(pred_e.shape) # torch.Size([19, 1080, 1920])
+            # pred = output.argmax(dim=0).float() ## prior 
+            pred = posterior.argmax(dim=0).float() ## posterior 
+            # pred = image.argmax(dim=0).float().cuda() ## likelihood 
+            # print(pred.shape) # torch.Size([1080, 1920]) 
+            pred_mask = torch.eq(pred_e, pred).byte()    
+            pred_mask = pred_mask*Mask 
             # print(Mask.shape) #torch.Size([1080, 1920])
-            # print(pred_mask.shape) #torch.Size([2, 1080, 1920]) 
+            # print(pred_mask.shape) #torch.Size([19, 1080, 1920]) 
 
             label_e = torch.linspace(0,C-1, steps=C).view(C, 1, 1)
             label_e = label_e.repeat(1, H, W).cuda()
             label = label.view(1, H, W)
             label_mask = torch.eq(label_e, label.float()).byte()
             label_mask = label_mask*Mask
+            # print(label_mask.shape) # torch.Size([19, 1080, 1920])
 
             tmp_inter = label_mask+pred_mask
+            # print(tmp_inter.shape)  # torch.Size([19, 1080, 1920])
             cu_inter = (tmp_inter==2).view(C, -1).sum(dim=1, keepdim=True).float()
             cu_union = (tmp_inter>0).view(C, -1).sum(dim=1, keepdim=True).float()
             cu_preds = pred_mask.view(C, -1).sum(dim=1, keepdim=True).float()
-            #extra
+            # extra
             # cu_gts = label_mask.view(C, -1).sum(dim=1, keepdim=True).float()
             # gts += cu_gts
             union+=cu_union
@@ -182,9 +348,16 @@ def compute_iou(model, testloader, args):
         mAcc = acc.mean().item()
         # print('*********')
         # print(gts)
-        print_iou(iou, acc, mIoU, mAcc)
+        # print_iou(iou, acc, mIoU, mAcc)  ## original
         ##################
         
+        # print(logits.shape)  # torch.Size([50, 19, 1080, 1920])
+        # print('*********' )
+        # print(labels.shape) # torch.Size([50, 1080, 1920])
+        sce_criterion_seg = ClasswiseECELossSeg().cuda()
+        sce = sce_criterion_seg(logits, labels).item()  
+        print(sce)   
+
         # print('*****************************')
         # mean_acc = Tp/totalp 
         # print('mean_acc: ', mean_acc)
@@ -198,36 +371,103 @@ def compute_iou(model, testloader, args):
 
         return iou, mIoU, acc, mAcc
 
+def makecalipredgt(model, testloader, args, da_model, lightnet, weights):
+    interp = nn.Upsample(size=(1080,1920), mode='bilinear', align_corners=True)   # dark_zurich -> (1080,1920) 
+    # print('******************') 
+    model = model.eval()
+    all_pred = []
+    all_true = []
+    
+    with torch.no_grad(): 
+        for index, batch in tqdm(enumerate(testloader)): 
+            image, label, edge, _, name = batch 
+            da_model = da_model.eval()
+            lightnet = lightnet.eval() 
+            with torch.no_grad():
+                r = lightnet(image.cuda())
+                enhancement = image.cuda() + r
+                if model == 'RefineNet':
+                    output2 = da_model(enhancement)
+                else:
+                    _, output2 = da_model(enhancement)
+
+            weights_prob = weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
+            weights_prob = weights_prob.transpose(1, 3)
+            output2 = output2 * weights_prob
+            output2 = interp(output2).cpu().numpy() 
+            pred = torch.tensor(output2) 
+
+            # print(pred.shape)
+            pred = F.softmax(pred, dim=1) ## for normalising prediction values 
+
+            nc = pred.shape[1]  
+            # pred_label = torch.argmax(pred, dim=1)  
+            (pred_conf, pred_label) = torch.max(pred,dim=1)  
+            # print(np.unique(pred_label))
+            # print(np.unique(label)) 
+            # print(np.unique(pred_conf)) ## now it is under 0 and 1
+            label = (label == pred_label) 
+            # label = F.one_hot(label, num_classes=nc) ## not req 
+
+            pred= pred_conf.squeeze()
+            label = label.squeeze()
+            # print(pred.shape)  # torch.Size([1080, 1920])
+            # print(label.shape) # torch.Size([1080, 1920]) 
+            pred = np.array(pred)
+            pred = pred.flatten() 
+            # print(np.unique(pred)) 
+            label = np.array(label).astype(int) 
+            # print(label)
+            label = label.flatten()
+
+            # print(np.unique(label)) # wrong ..true false coming ...now it is right conversion from bool to integer 
+            all_pred.append(pred)  
+            all_true.append(label)  
+             
+            
+    # all_pred = np.vstack(all_pred)
+    # all_true = np.vstack(all_true)    
+
+    all_pred = np.hstack(all_pred) ## it works !!!
+    all_true = np.hstack(all_true)  
+
+    # print(all_pred.shape)  # (50, 2073600) 
+    # print(all_true.shape) # (50, 2073600)
+    # print('roger that') 
+    return all_pred, all_true
+    # return pred, label # its working 
+
+
 def label_img_to_color(img):
-    # label_to_color = {
-    #     0: [128, 64,128],
-    #     1: [244, 35,232],
-    #     2: [ 70, 70, 70],
-    #     3: [102,102,156],
-    #     4: [190,153,153],
-    #     5: [153,153,153],
-    #     6: [250,170, 30],
-    #     7: [220,220,  0],
-    #     8: [107,142, 35],
-    #     9: [152,251,152],
-    #     10: [ 70,130,180],
-    #     11: [220, 20, 60],
-    #     12: [255,  0,  0],
-    #     13: [  0,  0,142],
-    #     14: [  0,  0, 70],
-    #     15: [  0, 60,100],
-    #     16: [  0, 80,100],
-    #     17: [  0,  0,230],
-    #     18: [119, 11, 32],
-    #     19: [0,  0, 0]
-    #     }
+    label_to_color = {
+        0: [128, 64,128],
+        1: [244, 35,232],
+        2: [ 70, 70, 70],
+        3: [102,102,156],
+        4: [190,153,153],
+        5: [153,153,153],
+        6: [250,170, 30],
+        7: [220,220,  0],
+        8: [107,142, 35],
+        9: [152,251,152],
+        10: [ 70,130,180],
+        11: [220, 20, 60],
+        12: [255,  0,  0],
+        13: [  0,  0,142],
+        14: [  0,  0, 70],
+        15: [  0, 60,100],
+        16: [  0, 80,100],
+        17: [  0,  0,230],
+        18: [119, 11, 32],
+        19: [0,  0, 0]
+        }
     # # with open('./dataset/cityscapes_list/info.json') as f:
     #     data = json.load(f)
 
-    label_to_color = {
-        0: [0, 0, 0],
-        1: [255,255,255]
-    }
+    # label_to_color = {
+    #     0: [0, 0, 0],
+    #     1: [255,255,255]
+    # }
 
     img_height, img_width = img.shape
 
@@ -263,8 +503,8 @@ def save_pred(pred, direc, name):
     # pred = np.asarray(np.argsort(pred, axis= 0)[-2], dtype = np.uint8)  ############ 2nd best prediction
     
     # if thresholding for binary segmentation 
-    pred[pred<0.5] = 0
-    pred[pred>=0.5] = 1
+    # pred[pred<0.5] = 0
+    # pred[pred>=0.5] = 1
     
     # pred = np.asarray(np.argmax(pred, axis=0))
     # print(pred.shape)
@@ -308,9 +548,9 @@ def save_pred(pred, direc, name):
 
 
 def main():
-    os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     args = get_arguments()
-    with open('./config/config_eval.yml') as f:
+    with open('./config/config.yml') as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
     cfg = edict(cfg)
     # cfg.num_classes=args.num_classes
@@ -323,12 +563,13 @@ def main():
     elif args.model == 'unet':
         # print(')))))))))))))))))))))))))))')
         # model = UNet(n_class=2).cuda() 
-        model = UNet_mod(n_channels=args.num_channels, n_class = args.num_classes).cuda()
+        # model = UNet_mod(n_class=2).cuda()  
+        model = UNet_mod(n_channels=args.num_channels, n_class = args.num_classes, fake_ce = cfg.fake_ce).cuda()
     else:
         model = FCN8s(num_classes = args.num_classes).cuda() 
 
     # model = nn.DataParallel(model)
-    model.load_state_dict(torch.load(args.frm)) #original
+    model.load_state_dict(torch.load(args.frm)) #original 
     # model.load_state_dict(torch.load(args.frm,strict=False))
 
     # original saved file with DataParallel
@@ -346,7 +587,19 @@ def main():
     # print(len(testloader))
     # print('****************************************************')
     # save_fake(model, testloader)
-    iou, mIoU, acc, mAcc = compute_iou(model, testloader, args) # original
+    
+    da_model, lightnet, weights = pred(cfg.num_classes, cfg.model_dannet, cfg.restore_from_da, cfg.restore_light_path)
+    fake_ce = cfg.fake_ce
+
+    # if args.calibrationcalc:
+    #     all_pred, all_true = makecalipredgt(model, testloader, args, da_model, lightnet, weights)
+    #     dict_metric = fast_ece(all_true, all_pred)  
+    #     print(dict_metric)
+
+    # else:
+        # iou, mIoU, acc, mAcc = compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce) # original 
+    
+    iou, mIoU, acc, mAcc = compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce) # original
     return
 
     # sys.stdout = Logger(osp.join(cfg['result'], args.frm+'.txt'))

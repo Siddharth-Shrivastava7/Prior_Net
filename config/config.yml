@@ -1,16 +1,24 @@
 note: 'train'
 # configs of data
 
-model: 'unet_e2e'
+model: 'unet_e2e_acdc_lmodel_posterior'   ### for unet_e2e_acdc check run by going 2/3 experiments back
 train: True
 multigpu: False 
 fixbn: False  # check this also ..  chg 
 fix_seed: True
 
+# dannet model pred 
+model_dannet: 'PSPNet'
+restore_from_da: '/home/sidd_s/scratch/saved_models_hpc/saved_models/DANNet/dannet_psp.pth'
+restore_light_path: '/home/sidd_s/scratch/saved_models_hpc/saved_models/DANNet/dannet_psp_light.pth'
+fake_ce: True  ######### check this up always @@@@@@@@@@@
+real_en: False
+one_hot: False
+uncertain: False
 
 # Optimizaers
 learning_rate: 2.5e-4 #changed from 7.5e-5
-num_steps: 26000 # not req # 1000 * 25
+num_steps: 34000 # not req # 1000*34  or 1000 * 282
 epochs: 1000 #chg
 weight_decay: 0.0005
 momentum: 0.9
@@ -27,10 +35,10 @@ val: True
 val_freq: 5 # 372 ..after one epoch for cityscapes train set (2975) with batch 8
 
 # Dataset 
-source: 'acdc_train_tensor' #chg for pred label
-target: 'acdc_val_tensor' #chg
+source: 'acdc_train_label' #chg for pred label
+target: 'acdc_val_label' #chg
 worker: 4
-batch_size: 16 #chg
+batch_size: 12 #chg
 num_classes: 19 #chg
 num_channels: 19 # chg 
 
@@ -46,8 +54,10 @@ rec: False
         
 # Model hypers
 init_weight: './save/model410_city_deeplabv2.pth'
-restore_from: None
-# restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e.pth'
+# restore_from: None
+restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_acdc_lmodel_prioralone.pth'
+# restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_predlabel.pth'
+# restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_acdc_dark_city_style.pth'   ## after epoch 508
 
 snapshot: '../scratch/saved_models/acdc/dannet'
 result: './miou_result/'
@@ -116,17 +126,53 @@ acdc_val_tensor: {
         input_size: [1920, 1080]        
 }
 acdc_train_label: {
-        data_dir: '/home/sidd_s/scratch/data_hpc/data/acdc_gt/',
+        data_dir:  '/home/sidd_s/scratch/data_hpc/data',
         data_list: './dataset/list/acdc/acdc_trainrgb.txt',
         input_size: [1920, 1080]
 }
 acdc_val_label: {
-        data_dir: '/home/sidd_s/scratch/data_hpc/data/acdc_gt/',
+        data_dir: '/home/sidd_s/scratch/data_hpc/data',
         data_list: './dataset/list/acdc/acdc_valrgb.txt',
         input_size: [1920, 1080]
 }
-acdc_val: {
-        data_dir: '/home/sidd_s/scratch/data_hpc/data/', 
-        data_list: './dataset/list/acdc/acdc_valrgb.txt',
+dz_val_tensor: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data/dark_zurich_val/gt',
+        data_list: './dataset/list/darkzurich/dz_val_rf_dannet.txt',
         input_size: [1920, 1080]
+}
+city_dark_img_tensor: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data/cityscapes',
+        data_list: './dataset/list/cityscapes/train.txt'
+}
+city_dark_img_tensor_val: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data/cityscapes', 
+        data_list: './dataset/list/cityscapes/val.txt'
+}
+acdc_city_dark: {
+        data_dir: '/home/sidd_s/scratch/data/acdc_city_dark',
+        data_list: '/home/sidd_s/Prior_Net/dataset/list/acdc_dark_city/train.txt'
+}
+acdc_city_dark_val: {
+        data_dir: '/home/sidd_s/scratch/data/acdc_city_dark',
+        data_list: '/home/sidd_s/Prior_Net/dataset/list/acdc_dark_city/val.txt'
+}
+acdc_fake_ce_train: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data',
+        data_list: './dataset/list/acdc/acdc_trainrgb.txt'
+}
+acdc_fake_ce_val: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data',
+        data_list: './dataset/list/acdc/acdc_valrgb.txt'
+}
+darkzurich: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data/dark_zurich_val',
+        data_list: '/home/sidd_s/Prior_Net/dataset/list/darkzurich/val.txt'
+}
+acdc_fake_ce_real_en_train: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data',
+        data_list: './dataset/list/acdc/acdc_trainrgb.txt'
+}
+acdc_fake_ce_real_en_val: {
+        data_dir: '/home/sidd_s/scratch/data_hpc/data',
+        data_list: './dataset/list/acdc/acdc_valrgb.txt'
 }

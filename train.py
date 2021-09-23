@@ -22,24 +22,21 @@ import random
 # .. yml file .. chg
 
 def main():
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '3'
     torch.manual_seed(1234)
     torch.cuda.manual_seed(1234)
     np.random.seed(1234)
     random.seed(1234)
     cudnn.enabled = True
-    cudnn.benchmark = True
+    cudnn.benchmark = True  
 #    torch.backends.cudnn.deterministic = True
     config, writer = init_config("config/config.yml", sys.argv)
-    # config.num_classes=19
+    # config.num_classes=19 
     # config.num_channels = 19
 
     model = init_model(config)
-
     trainer = Trainer(model, config, writer)
-
     trainer.train()
-
 
 if __name__ == "__main__":
     start = datetime.datetime(2020, 1, 22, 23, 00, 0)

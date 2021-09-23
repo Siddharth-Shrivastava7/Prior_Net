@@ -15,6 +15,7 @@ import copy
 import torch.nn.functional as F
 from tensorboardX import SummaryWriter
 import torch.nn as nn
+from dataset.network.dannet_pred import pred
 
 class Trainer(BaseTrainer):
     def __init__(self, model, config, writer):
@@ -22,20 +23,66 @@ class Trainer(BaseTrainer):
 
         self.config = config
         self.writer = writer
+
+        ### dannet model load...
+        # sv = torch.load('/home/sidd_s/scratch/saved_models_hpc/saved_models/DANNet/dannet_psp.pth')
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
+        # print('**************')
         
     def iter(self, batch):
         
         img, seg_label, _, _, name = batch
         # print(img.shape) 
+        interp = nn.Upsample(size=(512, 512), mode='bilinear', align_corners=True)
+        ### Dannet pred..to get predictions 
+        model = self.da_model.eval()
+        lightnet = self.lightnet.eval()
+        weights = self.weights
+
+        with torch.no_grad():
+            r = lightnet(img.cuda())
+            enhancement = img.cuda() + r
+            if model == 'RefineNet':
+                output2 = model(enhancement)
+            else:
+                _, output2 = model(enhancement)
+
+        weights_prob = weights.expand(output2.size()[0], output2.size()[3], output2.size()[2], 19)
+        weights_prob = weights_prob.transpose(1, 3)
+        output2 = output2 * weights_prob
+        # img = output2 
+        # print(output2.shape) # torch.Size([4, 19, 65, 65]) 
+        output2 = interp(output2).cpu().numpy() ## we have to upsample it... 
+        # print(output2.shape) # (4, 19, 512, 512) 
+        # print('*****************') 
+        img = torch.tensor(output2)         
+        # print(torch.unique(seg_label)) 
+        ### Dannet pred... 
+
+        if self.config.one_hot: 
+            ## one_hot_conversion.... 
+            # print('&&&&&&&&&&&&&&&&&&&')
+            nc = img.shape[1]
+            img = torch.argmax(img, dim=1)
+            img = F.one_hot(img, num_classes=nc)
+            img = img.transpose(3,2).transpose(2,1) 
+            # one_hot_conversion....
+            seg_pred = self.model(img.float().cuda())  ## one hot input
+        else:
+            # print('********************')
+            seg_pred = self.model(F.softmax(img.cuda(), dim=1)) ## mod.....resize@@@@
         
+        # print(seg_pred.shape) # torch.Size([12, 19, 512, 512])
         seg_label = seg_label.long().cuda() # cross entropy  
         b, c, h, w = img.shape
         # print(img.shape) # torch.Size([16, 19, 512, 512])
+        # print(torch.unique(seg_label)) # tensor([255], device='cuda:0') wrong brother
         
         # img = F.softmax(img, dim=1) ## extra see ...not giving not results not optimising early as comparre to just logits....but then 
 
-        seg_pred = self.model(img.cuda())
         # print(seg_pred.shape) # torch.Size([16, 19, 512, 512])
+        # print('********')
+        # print(seg_label.shape) 
         # seg_pred = nn.DataParallel(self.model(img.cuda())) 
         # print('yes')
         # print(seg_label.shape, seg_pred.shape) # torch.Size([16, 512, 512]) torch.Size([16, 19, 512, 512])
@@ -45,34 +92,48 @@ class Trainer(BaseTrainer):
         # print(seg_pred.shape)
         # print('**********************')
         loss = CrossEntropy2d() # ce loss 
+        # print('********************')
+
+        if self.config.fake_ce and self.config.real_en: 
+            loss2 = entropymax()
+            # print('yo') 
+            # print(seg_pred.shape) # torch.Size([12, 19, 512, 512])
+            seg_loss = loss(seg_pred, seg_label) + loss2(seg_pred, seg_label)             
         
-        # seg_pred = F.softmax(seg_pred, dim=1) ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy  ## not using 
+        if self.config.fake_ce and not self.config.real_en:
+            # print('***********')
+            # entropy_map = -torch.sum(seg_pred*torch.log(seg_pred), dim=1) 
+            ## weighting entropy map for the real in our model's output
+            seg_loss = loss(seg_pred, seg_label)
+            # print('**********')
 
-        ##############################################################################################
-        ### an exp.. to perfrom...which will be more related to probability (MAP) case of our hypothesis
-        # seg_pred = F.softmax(seg_pred, dim=1) ## proba distri for the prior 
-        ## now the tensor what we got from dannet assuming it to be prob distri only...but it has negative values tooo...but since over the same the argmax was taken thus that's our proba distri ... no more changes...now the posterior will be...as below defined....       that posterior will be the logits or the proba that we need to do...but my guess it should be the proba (still or exp with both)        
-        
-        ### an exp...
-        ##############################################################################################
+        else: 
+            # print('********')
+            # seg_pred = F.softmax(seg_pred, dim=1) ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy  ## not using 
 
-        ###### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
-        post = seg_pred * img.cuda().detach() ## detach is used to remove the grad calc for the original tensor...such that while backprop it doesn't update only the prior adjusts itself to lower the loss in the coming epochs and thus to reduce loss significantly.      ####### This is not possible when we are providing the input as 3 channel pred image or one hot encoded 19 channel image since then at the posterior time ..the likelihood will be 19 channel one hot thing 
+            ##############################################################################################
+            ### an exp.. to perfrom...which will be more related to probability (MAP) case of our hypothesis
+            # seg_pred = F.softmax(seg_pred, dim=1) ## proba distri for the prior 
+            ## now the tensor what we got from dannet assuming it to be prob distri only...but it has negative values tooo...but since over the same the argmax was taken thus that's our proba distri ... no more changes...now the posterior will be...as below defined....       that posterior will be the logits or the proba that we need to do...but my guess it should be the proba (still or exp with both)        
+            
+            ### an exp...
+            ##############################################################################################
 
+            ###### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
+            post = seg_pred * img.cuda().detach() ## detach is used to remove the grad calc for the original tensor...such that while backprop it doesn't update only the prior adjusts itself to lower the loss in the coming epochs and thus to reduce loss significantly.  ####### This is not possible when we are providing the input as 3 channel pred image or one hot encoded 19 channel image since then at the posterior time ..the likelihood will be 19 channel one hot thing 
 
-        # post = F.softmax(post, dim=1) ## not using 
-        # post = F.log_softmax(post, dim=1)  ## can use this with NLL pytorch function ..yes yes 
-        # post = F.log_softmax(seg_pred,dim=1) + F.log_softmax(img.cuda().detach(), dim=1)  ## exp ...let's see ..not works..and not neeeded too
-
-
-        # seg_loss = loss(seg_pred, seg_label) ## original
-        seg_loss = loss(post, seg_label)  # posterior MAP estimate
+            # post = F.softmax(post, dim=1) ## not using 
+            # post = F.log_softmax(post, dim=1)  ## can use this with NLL pytorch function ..yes yes 
+            # post = F.log_softmax(seg_pred,dim=1) + F.log_softmax(img.cuda().detach(), dim=1)  ## exp ...let's see ..not works..and not neeeded too
+            # seg_loss = loss(seg_pred, seg_label) ## original
+            seg_loss = loss(post, seg_label)  # posterior MAP estimate
+    
         self.losses.seg_loss = seg_loss
         loss = seg_loss  
         loss.backward()      
 
     def train(self):
-        writer = SummaryWriter(comment="unet_end2end_crop_ce")
+        writer = SummaryWriter(comment="unet_e2e_acdc_lmodel_posterior")
 
         if self.config.neptune:
             neptune.init(project_qualified_name='solacex/segmentation-DA')
@@ -89,9 +150,11 @@ class Trainer(BaseTrainer):
             # self.optim = optim.Adam(self.model.parameters(),
             #             lr=self.config.learning_rate, weight_decay=self.config.weight_decay)
         
+        # self.loader = dataset.init_test_dataset(self.config, self.config.target, set='val') # just for testing 
         self.loader, _ = dataset.init_source_dataset(self.config)#, source_list=self.config.src_list)
 
         cu_iter = 0
+        early_stop_patience = 0
         best_val_epoch_loss = float('inf')
         train_epoch_loss = 0
         print('Lets ride...')
@@ -102,7 +165,7 @@ class Trainer(BaseTrainer):
             print(epoch_infor)
             # print(len(self.loader))
             # print(self.config.learning_rate)
-
+ 
             for i_iter, batch in tqdm(enumerate(self.loader)):
                 cu_iter +=1
                 adjust_learning_rate(self.optim, cu_iter, self.config)
@@ -110,7 +173,7 @@ class Trainer(BaseTrainer):
                 self.losses = edict({})
                 losses = self.iter(batch)
 
-                # print(self.config['model'])
+                ## print(self.config['model'])
 
                 # print(self.losses['seg_loss'].item())
                 # print(cu_iter)
@@ -132,9 +195,10 @@ class Trainer(BaseTrainer):
 
                 valid_epoch_loss = self.validatebtad(epoch)
 
-                writer.add_scalars('Epoch_loss',{'train_rf_epoch_loss': train_epoch_loss,'valid_rf_epoch_loss':valid_epoch_loss},epoch)  
+                writer.add_scalars('Epoch_loss',{'train_tensor_epoch_loss': train_epoch_loss,'valid_tensor_epoch_loss':valid_epoch_loss},epoch)  
 
                 if(valid_epoch_loss < best_val_epoch_loss):
+                    early_stop_patience = 0 ## early stopping variable 
                     best_val_epoch_loss = valid_epoch_loss
                     print('********************')
                     print('best_val_epoch_loss: ', best_val_epoch_loss)
@@ -142,8 +206,15 @@ class Trainer(BaseTrainer):
                     name = self.config['model'] + '.pth' # for the ce loss 
                     # name = 'acdc_tensor_focal.pth' # focal loss 
                     torch.save(self.model.state_dict(), osp.join(self.config["snapshot"], name))
-                    
+                # else: ## early stopping with patience of 50
+                #     early_stop_patience = early_stop_patience + 1 
+                #     if early_stop_patience == 50:
+                #         break
                 self.model = self.model.train()
+            
+            # if early_stop_patience == 50: 
+            #     print('Early_Stopping!!!')
+            #     break ``
 
         writer.export_scalars_to_json("./all_scalars.json")
         writer.close()
@@ -170,10 +241,11 @@ class Trainer(BaseTrainer):
 
 class CrossEntropy2d(nn.Module):
 
-    def __init__(self, size_average=True, ignore_label=255):
+    def __init__(self, size_average=True, ignore_label=255, real_label=100):
         super(CrossEntropy2d, self).__init__()
         self.size_average = size_average
         self.ignore_label = ignore_label
+        self.real_label = real_label
 
     def forward(self, predict, target, weight=None):
         """
@@ -190,7 +262,7 @@ class CrossEntropy2d(nn.Module):
         assert predict.size(2) == target.size(1), "{0} vs {1} ".format(predict.size(2), target.size(1))
         assert predict.size(3) == target.size(2), "{0} vs {1} ".format(predict.size(3), target.size(3))
         n, c, h, w = predict.size()
-        target_mask = (target >= 0) * (target != self.ignore_label)
+        target_mask = (target >= 0) * (target != self.ignore_label) * (target!= self.real_label)  ### should not apply ce loss to the real labels (addon)
         target = target[target_mask]
         predict = predict.transpose(1, 2).transpose(2, 3).contiguous()
         predict = predict[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
@@ -198,7 +270,7 @@ class CrossEntropy2d(nn.Module):
         # print('***************')
         # print(target.shape)
         loss = F.cross_entropy(predict, target, weight=weight, size_average=self.size_average) 
-        # loss = F.nll_loss(predict, target, weight=weight, size_average= self.size_average )   ## NLL loss cause the pred is now in softmax form..not using cause....nan is showing up sometimes    
+        # loss = F.nll_loss(predict, target, weight=weight, size_average= self.size_average )  ## NLL loss cause the pred is now in softmax form..not using cause....nan is showing up sometimes    
         return loss
 
 class WeightedFocalLoss(nn.Module):
@@ -225,3 +297,23 @@ class WeightedFocalLoss(nn.Module):
         # print('^^^^^^^^^^^^')
         F_loss = at*(1-pt)**self.gamma * BCE_loss
         return F_loss.mean()
+
+class entropymax(nn.Module): 
+    def __init__(self, real_label = 100):
+        super(entropymax, self).__init__()
+        self.real_label = real_label
+    
+    def forward(self, inputs, targets):
+        ## mask creation.. 
+        target_mask = (targets == self.real_label)  ## binary mask for the region where the actual real is there
+        ## mask creation..
+        n, c, h, w = inputs.size()
+        inputs = inputs.transpose(1, 2).transpose(2, 3).contiguous() ## input shape --> (n, h, w, c)
+        # inputs = inputs[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
+        inputs = inputs[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
+        # print(inputs.shape)
+        # print(inputs.shape)  # torch.Size([0]) ....wrong brother
+        # inputs = inputs + 1e-16 # for numerical stability while taking log 
+        output = F.softmax(inputs, dim=1) * F.log_softmax(inputs, dim=1)  
+        loss = torch.mean(torch.sum(output, dim=1))  ## just loss = output.sum()
+        return loss     
