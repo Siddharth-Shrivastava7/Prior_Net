@@ -19,6 +19,7 @@ import torchvision
 import cv2
 from dataset.network.dannet_pred import pred
 from utils.calibrationmetrics import *
+import matplotlib.pyplot as plt
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -34,7 +35,7 @@ def get_arguments():
     parser.add_argument("--start", type=int, default=1)
     parser.add_argument("--dataset", type=str, default='darkzurich')
     parser.add_argument("--model", default='unet') 
-    parser.add_argument("--calibrationcalc", action='store_true')
+    parser.add_argument("-c", "--calibrationcalc", action='store_true')
     return parser.parse_args()
 
 def print_iou(iou, acc, miou, macc):
@@ -354,10 +355,40 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
         # print(logits.shape)  # torch.Size([50, 19, 1080, 1920])
         # print('*********' )
         # print(labels.shape) # torch.Size([50, 1080, 1920])
-        sce_criterion_seg = ClasswiseECELossSeg().cuda()
-        sce = sce_criterion_seg(logits, labels).item()  
-        print(sce)   
 
+        ## SCE calibration metric 
+        sce_criterion_seg = ClasswiseECELossSeg().cuda()
+        sce, class_sce_lst = sce_criterion_seg(logits, labels)   
+        # print(class_sce_lst)   
+
+        ## ACE Calibration metric
+        # aece_criterion_seg = ClasswiseAdaptiveECELoss().cuda()
+        # aece, class_aece_lst= aece_criterion_seg(logits, labels)
+
+        save_path = '/home/sidd_s/Prior_Net/class_sce_plots'
+        num_classes = len(class_sce_lst)
+        # print(len(class_aece_lst[0]))
+        for c in tqdm(range(num_classes)): 
+            plt.figure()
+            acc_lst =  [val[0] for val in class_sce_lst[c]]     
+            conf_lst = [val[1] for val in class_sce_lst[c]]
+            plt.plot(acc_lst, conf_lst ,'--o', label='class ' + str(c))
+            plt.plot([0.0, 1.0], [0.0, 1.0], label = 'perfect')
+            plt.title('Classwise AECE for Class ' + str(c)) 
+            plt.legend()
+            plt.savefig(os.path.join(save_path, 'Class_' + str(c) + '.png')) 
+        
+        # print('yo')             
+            
+        # print(sce.item()) 
+        ## ACE Calibration metric 
+        # aece_criterion_seg = ClasswiseAdaptiveECELoss().cuda()
+        # aece, class_aece_lst, bin_bound = aece_criterion_seg(logits, labels)
+        # print(aece.item())
+        # print(class_aece_lst)
+        # print('*******************')
+        # print(bin_bound) 
+        
         # print('*****************************')
         # mean_acc = Tp/totalp 
         # print('mean_acc: ', mean_acc)
@@ -548,7 +579,7 @@ def save_pred(pred, direc, name):
 
 
 def main():
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
     args = get_arguments()
     with open('./config/config.yml') as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)

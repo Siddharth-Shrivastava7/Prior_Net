@@ -414,7 +414,7 @@ class BaseDataSet(data.Dataset):
                     nm = name.split('/')[-1].replace('_gt_labelColor.png', '_rgb_anon.pt')
                     img_save = '/home/sidd_s/scratch/saved_models_hpc/saved_models/DANNet/dz_val/tensor_pred'
                     img_file = osp.join(img_save, nm)
-                    nm = name.replace('_gt_labelColor.png','_gt_labelTrainIds.png')
+                    nm = name.replace('_gt_labelColor.png','_gt_labelTrainIds.png')   
                     label_file = osp.join(self.root, nm)
                     # print(label_file)
                     # print('***************')
@@ -588,8 +588,8 @@ class BaseDataSet(data.Dataset):
                     # # print('yo')
 
                     ### modified one...for train 
-
                     ## only augmentation currently, doing is the random crop
+
                     x = []
                     image = torch.load(datafiles["img"]) 
                     image = image.transpose(2,0,1) 
