@@ -260,9 +260,9 @@ class BaseTrainer(object):
                 loss2 = entropymax()
                 seg_loss = loss(seg_pred, seg_label) + loss2(seg_pred, seg_label)        
 
-            elif self.config.fake_ce and not self.config.real_en:
-                seg_loss = loss(seg_pred, seg_label)
-                # print('**********')
+            # elif self.config.fake_ce and not self.config.real_en:
+            #     seg_loss = loss(seg_pred, seg_label)
+            #     # print('**********')
 
             else: 
                 # seg_pred = F.softmax(seg_pred, dim=1)  ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy ## not using 
@@ -270,11 +270,25 @@ class BaseTrainer(object):
                 ##### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
                 post = seg_pred * img.cuda().detach() ## not going backwards so...no worry here not require to use detach
                 # post = seg_pred * img.cuda() ## causing currently using pred label to gt label exp....
+                
+                img_prob = F.softmax(img.cuda(), dim=1)  
+                entropy_map = -torch.sum(img_prob*torch.log(img_prob), dim=1) 
+                # print(torch.max(entropy_map))   
+                entropy_map_norm = entropy_map / torch.max(entropy_map) 
+                # print(entropy_map_norm.shape) # torch.Size([12, 512, 512])
+                entropy_map_norm = entropy_map_norm.unsqueeze(dim=1)
+
+                # out = post.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach()
+                out = seg_pred.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach()
+
 
                 # post = F.softmax(post, dim=1) ## not using 
         
                 # seg_loss = loss(seg_pred, seg_label) ## original
-                seg_loss = loss(post, seg_label) # posterior MAP estimate    
+                # seg_loss = loss(post, seg_label) # posterior MAP estimate 
+                
+                seg_loss = loss(out, seg_label)
+
             total_loss += seg_loss.item()
         total_loss /= len(iter(testloader))
         print('---------------------')

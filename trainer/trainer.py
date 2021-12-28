@@ -1,4 +1,5 @@
 # commenting the original btad for unet based real/fake 
+from numpy.core.numeric import indices
 import torch
 from utils.optimize import *
 from .base_trainer import BaseTrainer
@@ -55,8 +56,17 @@ class Trainer(BaseTrainer):
         output2 = interp(output2).cpu().numpy() ## we have to upsample it... 
         # print(output2.shape) # (4, 19, 512, 512) 
         # print('*****************') 
-        img = torch.tensor(output2)         
-        # print(torch.unique(seg_label)) 
+        img = torch.tensor(output2)        
+
+        ## making it probability distribution
+        # img_prob = F.softmax(img.cuda(), dim=1)  
+        # print(torch.max(img_prob)) 
+        # print(torch.min(img_prob))
+
+        # print(torch.unique(seg_label))  
+        # print(img)  
+        # print(torch.max(img))  # tensor(14.3076) for one of the input
+        # print(torch.min(img)) # tensor(-40.9996) for one of the input
         ### Dannet pred... 
 
         if self.config.one_hot: 
@@ -70,11 +80,18 @@ class Trainer(BaseTrainer):
             seg_pred = self.model(img.float().cuda())  ## one hot input
         else:
             # print('********************')
-            seg_pred = self.model(F.softmax(img.cuda(), dim=1)) ## mod.....resize@@@@
+            # seg_pred = self.model(F.softmax(img.cuda(), dim=1)) ## mod.....resize@@@@
+            # seg_pred = self.model(img_prob.cuda()) 
+            seg_pred = self.model(img.cuda()) 
         
+        ## making it probability distribution 
+        # seg_pred_prob = F.softmax(seg_pred, dim=1)
+
         # print(seg_pred.shape) # torch.Size([12, 19, 512, 512])
-        seg_label = seg_label.long().cuda() # cross entropy  
-        b, c, h, w = img.shape
+        # print(torch.max(seg_pred)) 
+        # print(torch.min(seg_pred))
+        seg_label = seg_label.long().cuda() # cross entropy   
+        # b, c, h, w = img.shape
         # print(img.shape) # torch.Size([16, 19, 512, 512])
         # print(torch.unique(seg_label)) # tensor([255], device='cuda:0') wrong brother
         
@@ -97,18 +114,20 @@ class Trainer(BaseTrainer):
         if self.config.fake_ce and self.config.real_en: 
             loss2 = entropymax()
             # print('yo') 
+            print('<<<<<<<<<<<<<<<<<<<<<<<<<<')
             # print(seg_pred.shape) # torch.Size([12, 19, 512, 512])
             seg_loss = loss(seg_pred, seg_label) + loss2(seg_pred, seg_label)             
         
-        if self.config.fake_ce and not self.config.real_en:
-            # print('***********')
-            # entropy_map = -torch.sum(seg_pred*torch.log(seg_pred), dim=1) 
-            ## weighting entropy map for the real in our model's output
-            seg_loss = loss(seg_pred, seg_label)
-            # print('**********')
+        # if self.config.fake_ce and not self.config.real_en:
+        #     # print('***********')
+        #     # print('>>>>>>>>>>>>>>>>>>>>>')
+        #     # entropy_map = -torch.sum(seg_pred*torch.log(seg_pred), dim=1) 
+        #     ## weighting entropy map for the real in our model's output
+        #     seg_loss = loss(seg_pred, seg_label)
+        #     # print('**********')
 
         else: 
-            # print('********')
+            # print('*************************************')
             # seg_pred = F.softmax(seg_pred, dim=1) ## cause the input tensor is also being under proba distribtution...so making it also...will be using.. NLL loss in cross entropy  ## not using 
 
             ##############################################################################################
@@ -120,24 +139,69 @@ class Trainer(BaseTrainer):
             ##############################################################################################
 
             ###### posterior = prior (seg pred...i.e. prior which is getting refine) * likelihood (orginal tensor)
-            post = seg_pred * img.cuda().detach() ## detach is used to remove the grad calc for the original tensor...such that while backprop it doesn't update only the prior adjusts itself to lower the loss in the coming epochs and thus to reduce loss significantly.  ####### This is not possible when we are providing the input as 3 channel pred image or one hot encoded 19 channel image since then at the posterior time ..the likelihood will be 19 channel one hot thing 
+            # post = seg_pred * img.cuda().detach() ## detach is used to remove the grad calc for the original tensor...such that while backprop it doesn't update only the prior adjusts itself to lower the loss in the coming epochs and thus to reduce loss significantly.  ####### This is not possible when we are providing the input as 3 channel pred image or one hot encoded 19 channel image since then at the posterior time ..the likelihood will be 19 channel one hot thing 
+            
+            # post = seg_pred_prob * img_prob.cuda().detach()
+            # post1 = seg_pred * img.cuda().detach()   
 
-            # post = F.softmax(post, dim=1) ## not using 
+            ### repeat 
+            # seg_pred2 = self.model(post1.cuda()) 
+            # post = seg_pred2 * post1.cuda()  
+
+            # print(torch.argmax(post, dim=1))  
+            
+            img_prob = F.softmax(img.cuda(), dim=1)  
+            entropy_map = -torch.sum(img_prob*torch.log(img_prob), dim=1) 
+            # print(torch.max(entropy_map))   
+            entropy_map_norm = entropy_map / torch.max(entropy_map) 
+            # print(entropy_map_norm.shape) # torch.Size([12, 512, 512])
+            entropy_map_norm = entropy_map_norm.unsqueeze(dim=1)  
+
+            # ind = torch.argmax(post, dim=1) 
+            # # print(ind) 
+            # post[:, ind,:,:] = 1
+
+            # print(post)
+
+            # print(post) 
+            # print('******************') 
+            # print(img)  
+            # print('****************')
+            # print(entropy_map_norm)
+
+            # out = post.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach()  
+            out = seg_pred.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach() 
+
+            # # repeat 
+            seg_pred2 = self.model(out.cuda())   
+            out2 = seg_pred2.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach()  
+
+            ## repeat 
+            seg_pred3 = self.model(out2.cuda())   
+            out3 = seg_pred3.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach() 
+
+
+            # print(post.shape) # torch.Size([12, 19, 512, 512]) 
+            # print(post)
+            # post = F.softmax(post, dim=1) ## not using   
+            # print(post) 
             # post = F.log_softmax(post, dim=1)  ## can use this with NLL pytorch function ..yes yes 
             # post = F.log_softmax(seg_pred,dim=1) + F.log_softmax(img.cuda().detach(), dim=1)  ## exp ...let's see ..not works..and not neeeded too
             # seg_loss = loss(seg_pred, seg_label) ## original
-            seg_loss = loss(post, seg_label)  # posterior MAP estimate
+            # seg_loss = loss(post, seg_label)  # posterior MAP estimate 
+            # seg_loss = loss(out2, seg_label) 
+            seg_loss = loss(out3, seg_label)
     
         self.losses.seg_loss = seg_loss
         loss = seg_loss  
         loss.backward()      
 
     def train(self):
-        writer = SummaryWriter(comment="unet_e2e_acdc_lmodel_posterior")
+        writer = SummaryWriter(comment="unet_e2e_acdc_ent_iterate_iterate_drp_bt4")
 
-        if self.config.neptune:
-            neptune.init(project_qualified_name='solacex/segmentation-DA')
-            neptune.create_experiment(params=self.config, name=self.config['note'])
+        # if self.config.neptune:
+        #     neptune.init(project_qualified_name='solacex/segmentation-DA')
+        #     neptune.create_experiment(params=self.config, name=self.config['note'])
 
         if self.config.multigpu:       
             self.optim = optim.SGD(self.model.module.optim_parameters(self.config.learning_rate),
@@ -151,7 +215,7 @@ class Trainer(BaseTrainer):
             #             lr=self.config.learning_rate, weight_decay=self.config.weight_decay)
         
         # self.loader = dataset.init_test_dataset(self.config, self.config.target, set='val') # just for testing 
-        self.loader, _ = dataset.init_source_dataset(self.config)#, source_list=self.config.src_list)
+        self.loader, _ = dataset.init_source_dataset(self.config) #, source_list=self.config.src_list)
 
         cu_iter = 0
         early_stop_patience = 0
@@ -174,7 +238,6 @@ class Trainer(BaseTrainer):
                 losses = self.iter(batch)
 
                 ## print(self.config['model'])
-
                 # print(self.losses['seg_loss'].item())
                 # print(cu_iter)
                 train_epoch_loss += self.losses['seg_loss'].item()

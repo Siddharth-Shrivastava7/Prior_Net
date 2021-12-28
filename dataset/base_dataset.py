@@ -783,8 +783,10 @@ class BaseDataSet(data.Dataset):
                     
                     transforms_compose_img = transforms.Compose([
                         transforms.Resize((540, 960)),
+                        transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), ## added for aug2 exp (only this in aug3)
                         transforms.ToTensor(),
-                        transforms.Normalize(*mean_std) 
+                        transforms.Normalize(*mean_std), 
+                        # transforms.RandomErasing() ## added for aug2 exp 
                     ])
                     image = Image.open(datafiles["img"]).convert('RGB') 
                     image = transforms_compose_img(image)    

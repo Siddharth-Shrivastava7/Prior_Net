@@ -34,6 +34,11 @@ def get_arguments():
     parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_resize_mod.pth')
     parser.add_argument("--start", type=int, default=1)
     parser.add_argument("--dataset", type=str, default='darkzurich')
+            ## pred label of dannet......for prediction
+
+            # img = torch.argmax(image, dim=1)
+            # # print(img.shape)
+            # img = label_img_to_color(img.squeeze().cpu().numpy())
     parser.add_argument("--model", default='unet') 
     parser.add_argument("-c", "--calibrationcalc", action='store_true')
     return parser.parse_args()

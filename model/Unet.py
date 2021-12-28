@@ -10,11 +10,11 @@ def double_conv(in_channels, out_channels):
     nn.Conv2d(in_channels, out_channels, kernel_size = 3, padding=1),
     nn.BatchNorm2d(out_channels),
     nn.ReLU(inplace=True),
-    # nn.Dropout(p=0.9), ## regualarisation..using high dropout rate of 0.9...lets see for few moments...
+    nn.Dropout(p=0.9), ## regualarisation..using high dropout rate of 0.9...lets see for few moments...
     nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
     nn.BatchNorm2d(out_channels),
     nn.ReLU(inplace=True),
-    # nn.Dropout(p=0.5) ## dual dropout 
+    # nn.Dropout(p=0.9) ## dual dropout 
   )
 
 def down(in_channels, out_channels):
@@ -54,7 +54,7 @@ class UNet_mod(nn.Module):
     super(UNet_mod, self).__init__()
     self.n_channels = n_channels
     self.n_class = n_class
-    self.fake_ce = False ## for reducing model complexity in order to reduce for overfitting  ## back to org ...better to go ahead with the bigger size unet model its giving better performance as compare to the smaller model one....so my hypothesis is that more regularisation is required instead of decreasing the model complexing for correction net...
+    self.fake_ce = fake_ce ## for reducing model complexity in order to reduce for overfitting  ## back to org ...better to go ahead with the bigger size unet model its giving better performance as compare to the smaller model one....so my hypothesis is that more regularisation is required instead of decreasing the model complexing for correction net...
 
     self.inc = double_conv(self.n_channels, 64)
     self.down1 = down(64,128)
