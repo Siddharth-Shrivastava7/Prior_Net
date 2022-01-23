@@ -219,7 +219,7 @@ class Trainer(BaseTrainer):
 
         cu_iter = 0
         early_stop_patience = 0
-        best_val_epoch_loss = float('inf')
+        best_val_epoch_loss = float('inf') 
         train_epoch_loss = 0
         print('Lets ride...')
 

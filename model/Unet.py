@@ -32,7 +32,7 @@ class up(nn.Module):
     self.conv = double_conv(in_channels, out_channels)
   def forward(self,x1,x2): 
     x1 = self.up(x1)
-    # input is CHW
+    # input is CHW 
     diffY = x2.size()[2] - x1.size()[2]
     diffX = x2.size()[3] - x1.size()[3]
 
@@ -62,7 +62,7 @@ class UNet_mod(nn.Module):
     self.down3 = down(256,512)
     self.down4 = down(512, 1024)
     
-    self.up1 = up(1024,512)
+    self.up1 = up(1024,512)  
     self.up2 = up(512,256)
     self.up3 = up(256,128)
     self.up4 = up(128,64)

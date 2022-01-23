@@ -31,7 +31,7 @@ def get_arguments():
     parser.add_argument("--ignore-label", type=int, default=255)
     parser.add_argument("--num-classes", type=int, default=19)
     parser.add_argument("--num-channels", type=int, default=19)
-    parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_resize_mod.pth')
+    parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_acdc_iterate.pth')
     parser.add_argument("--start", type=int, default=1)
     parser.add_argument("--dataset", type=str, default='darkzurich')
             ## pred label of dannet......for prediction

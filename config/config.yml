@@ -1,7 +1,7 @@
 note: 'train'
 # configs of data
 
-model: 'unet_e2e_acdc_ent_iterate_iterate_drp_bt4'  
+model: 'unet_e2e_acdc_iterate'  
 train: True
 multigpu: False 
 fixbn: False  # check this also ..  chg 
@@ -165,8 +165,8 @@ acdc_fake_ce_val: {
         data_list: './dataset/list/acdc/acdc_valrgb.txt'
 }
 darkzurich: {
-        data_dir: '/home/sidd_s/scratch/data_hpc/data/dark_zurich_val',
-        data_list: '/home/sidd_s/Prior_Net/dataset/list/darkzurich/val.txt'
+        data_dir: '/home/sidd_s/scratch/dataset/dark_zurich_val',
+        data_list: './dataset/list/darkzurich/val.txt'
 }
 acdc_fake_ce_real_en_train: {
         data_dir: '/home/sidd_s/scratch/data_hpc/data',

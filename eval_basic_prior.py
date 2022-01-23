@@ -31,14 +31,13 @@ def get_arguments():
     parser.add_argument("--ignore-label", type=int, default=255)
     parser.add_argument("--num-classes", type=int, default=19)
     parser.add_argument("--num-channels", type=int, default=19)
-    parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/priornet/unet_e2e_resize_mod.pth')
+    parser.add_argument("--frm", type=str, default='/home/sidd_s/scratch/saved_models/acdc/dannet/train/unet_e2e_acdc_iterate_drp.pth')
     parser.add_argument("--start", type=int, default=1)
     parser.add_argument("--dataset", type=str, default='darkzurich')
-            ## pred label of dannet......for prediction
-
-            # img = torch.argmax(image, dim=1)
-            # # print(img.shape)
-            # img = label_img_to_color(img.squeeze().cpu().numpy())
+    ## pred label of dannet......for prediction
+    # img = torch.argmax(image, dim=1)
+    # # print(img.shape)
+    # img = label_img_to_color(img.squeeze().cpu().numpy())
     parser.add_argument("--model", default='unet') 
     parser.add_argument("-c", "--calibrationcalc", action='store_true')
     return parser.parse_args()
@@ -62,13 +61,13 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
     labels_list = []
     # 2nd best 
     # totalp = 0
-    # Tp = 0  
+    # Tp = 0   
     with torch.no_grad():
         for index, batch in tqdm(enumerate(testloader)):
             # print('******************') 
             image, label, edge, _, name = batch
             # print(image.shape) 
-#            edge = F.interpolate(edge.unsqueeze(0), (512, 1024)).view(1,512,1024)``
+#            edge = F.interpolate(edge.unsqueeze(0), (512, 1024)).view(1,512,1024)
             # print(name)
             # if name[0].find('dannet_pred')==-1: 
             #     continue
@@ -93,7 +92,7 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
             output2 = interp(output2).cpu().numpy()
 
             image = torch.tensor(output2) 
-            # print(image)
+            # print(image.shape) # torch.Size([1, 19, 1080, 1920]) 
 
             ### calibration 
             if args.calibrationcalc:
@@ -128,17 +127,18 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
             # print(img.shape) # torch.Size([12, 19, 512, 512])
             ### one_hot_conversion.... 
 
-            output =  model(F.softmax(image.cuda(),dim=1))      
-            # output = model(img.float().cuda())  ## one hot input
-            # output = model(img.cuda())
+            # output =  model(F.softmax(image.cuda(),dim=1))      
+            # output = model(img.float().cuda())  ## one hot input  
+            # print(image.shape) # torch.Size([1, 19, 1080, 1920])
+            output = model(image.cuda()) 
             # output = model(F.softmax(img.float().cuda(), dim = 1)) 
             label = label.cuda()
 
-            output = output.squeeze()
-            image = image.squeeze() 
+            # output = output.squeeze()
+            # image = image.squeeze() 
             # print(image.shape) # torch.Size([19, 1080, 1920]) 
             # print(output.shape) # torch.Size([19, 1080, 1920])
-            C,H,W = output.shape 
+            B,C,H,W = output.shape 
             # posterior = output * image.cuda()  ## it's logits....which usually have taken to go through cross entropy loss...
             # posterior = F.softmax(posterior, dim=0)
         
@@ -147,72 +147,106 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
             #     image_arr = np.array(image)
             #     label_arr = np.array(label)
             #     for i in range(1,11):
-            #         indices = image_arr[0<image_arr<0.1]
+            #         indices = image_arr[0<image_arr<0.1] 
                     
 
             #     ## confidences with 0 to 1 with gap of 0.1 
             #     continue
             
-
             if fake_ce:
-                # print('************')
-                # seg_loss = loss(output, label) 
-                ### to add the evaluation.... 
-                # print('will do') 
+                ## iterate 
+                # print(image.shape)  # torch.Size([19, 1080, 1920]) 
+                # print(output.shape)  # torch.Size([19, 1080, 1920])  
+                posterior = output * image.cuda().detach()  
+                # # posterior = image.cuda() 
+                # # print(post1.shape)  
+                seg_pred2 = model(posterior.cuda())  
+                posterior = seg_pred2 * posterior.cuda()   
 
-                # output = F.softmax(output, dim=0)
-                # image = F.softmax(image, dim= 0)
+                ## probability distribution 
+                # posterior = posterior.squeeze() 
+                # # print(posterior.shape)
+                # posterior = F.softmax(posterior, dim=0) 
 
-                # entropy_prior = -torch.sum(output*torch.log(output), dim=0)
-                entropy_prior = -torch.sum(F.softmax(output, dim=0) * F.log_softmax(output, dim=0), dim=0) 
-                entropy_max = np.max(np.array(entropy_prior.cpu()))
-                entropy_min = np.min(np.array(entropy_prior.cpu()))
-                # print(entropy_max)
-                # print(entropy_min) 
-                entropy_prior = entropy_prior / entropy_max 
+                # print(posterior.shape)
+                # img_prob = F.softmax(image.cuda(), dim=1)  
+                # entropy_map = -torch.sum(img_prob*torch.log(img_prob), dim=1) 
+                # # print(torch.max(entropy_map))   
+                # entropy_map_norm = entropy_map / torch.max(entropy_map) 
+                # # print(entropy_map_norm.shape) # torch.Size([12, 512, 512])
+                # entropy_map_norm = entropy_map_norm.unsqueeze(dim=1)   
+
+                # out = output.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * image.cuda().detach()
+   
+                # # # repeat 
+                # seg_pred2 = model(out.cuda())   
+                # posterior = seg_pred2.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * image.cuda().detach()  
+
+
+                ## probability distribution 
+                # posterior = image.cuda()
+                posterior = posterior.squeeze() 
+                # # print(posterior.shape)
+                posterior = F.softmax(posterior, dim=0) 
+
+                # # print('************')
+                # # seg_loss = loss(output, label) 
+                # ### to add the evaluation.... 
+                # # print('will do') 
+
+                # # output = F.softmax(output, dim=0)
+                # # image = F.softmax(image, dim= 0)
+
+                # # entropy_prior = -torch.sum(output*torch.log(output), dim=0)
+                # entropy_prior = -torch.sum(F.softmax(output, dim=0) * F.log_softmax(output, dim=0), dim=0) 
                 # entropy_max = np.max(np.array(entropy_prior.cpu()))
                 # entropy_min = np.min(np.array(entropy_prior.cpu()))
-                # print(entropy_max)  # 1 
-                # print(entropy_min)  # 0.89 
-                # entropy_prior = F.softmax(entropy_prior, dim=0)
-                # entropy_max = np.min(np.array(entropy_prior.cpu()))
-                # print(entropy_max) # nan....
-                # threshold entropy_map # not helping much
-                # entropy_prior[entropy_prior>=0.4] = 1
-                # entropy_prior[entropy_prior<0.4] = 0
+                # # print(entropy_max)
+                # # print(entropy_min) 
+                # entropy_prior = entropy_prior / entropy_max 
+                # # entropy_max = np.max(np.array(entropy_prior.cpu()))
+                # # entropy_min = np.min(np.array(entropy_prior.cpu()))
+                # # print(entropy_max)  # 1 
+                # # print(entropy_min)  # 0.89 
+                # # entropy_prior = F.softmax(entropy_prior, dim=0)
+                # # entropy_max = np.min(np.array(entropy_prior.cpu()))
+                # # print(entropy_max) # nan....
+                # # threshold entropy_map # not helping much
+                # # entropy_prior[entropy_prior>=0.4] = 1
+                # # entropy_prior[entropy_prior<0.4] = 0
 
-                entropy_liki = -torch.sum(F.softmax(image.cuda(), dim=0) * F.log_softmax(image.cuda(), dim=0), dim=0)
-                entropy_max_l = np.max(np.array(entropy_liki.cpu()))
-                entropy_liki = entropy_liki / entropy_max_l
+                # entropy_liki = -torch.sum(F.softmax(image.cuda(), dim=0) * F.log_softmax(image.cuda(), dim=0), dim=0)
+                # entropy_max_l = np.max(np.array(entropy_liki.cpu()))
+                # entropy_liki = entropy_liki / entropy_max_l
 
-                name =name[0].split('/')[-1] 
-                en_prior = np.array(255* entropy_prior.cpu()) 
-                en_prior = Image.fromarray(en_prior).convert('L')
-                # print(en_prior.shape)  # (1080, 1920) 
-                en_prior.save('../scratch/data/e2e_pred/unet_e2e_resize_mod_entropyprior/' + name + '.png') 
+                # name =name[0].split('/')[-1] 
+                # en_prior = np.array(255* entropy_prior.cpu()) 
+                # en_prior = Image.fromarray(en_prior).convert('L')
+                # # print(en_prior.shape)  # (1080, 1920) 
+                # # en_prior.save('../scratch/data/e2e_pred/unet_e2e_resize_mod_entropyprior/' + name + '.png') 
 
-                # print(np.max(np.array(entropy_prior.cpu()))) # nan.....ok..error..
-                # output = F.softmax(output, dim=0) 
-                # image = F.softmax(image, dim=0)
-                # posterior = F.log_softmax(output, dim=0)  + F.log_softmax(image.cuda(),dim=0)
+                # # print(np.max(np.array(entropy_prior.cpu()))) # nan.....ok..error..
+                # # output = F.softmax(output, dim=0) 
+                # # image = F.softmax(image, dim=0)
+                # # posterior = F.log_softmax(output, dim=0)  + F.log_softmax(image.cuda(),dim=0)
 
-                lamb = 0.5
-                # posterior = lamb* F.log_softmax(output, dim=0)  +  F.log_softmax( image.cuda(),dim=0)
-                posterior = lamb* entropy_liki * F.log_softmax(output, dim=0)  +   F.log_softmax(image.cuda(),dim=0)  
-                # posterior = lamb* F.log_softmax( (1-entropy_prior) * output, dim=0)  + F.log_softmax(image.cuda(),dim=0)
-                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( entropy_prior * image.cuda(),dim=0) 
-                # posterior = lamb* entropy_liki * F.log_softmax(output, dim=0)  +   F.log_softmax( (1-entropy_liki) * image.cuda(),dim=0)
-                # posterior = lamb* (1-entropy_liki) * F.log_softmax(output, dim=0)  +   F.log_softmax( (1-entropy_prior) * image.cuda(),dim=0)
-                # output = F.log_softmax( (1-entropy_prior) * output, dim=0)
+                # lamb = 0.5
+                # # posterior = lamb* F.log_softmax(output, dim=0)  +  F.log_softmax( image.cuda(),dim=0)
+                # posterior = lamb* entropy_liki * F.log_softmax(output, dim=0)  +   F.log_softmax(image.cuda(),dim=0)  
+                # # posterior = lamb* F.log_softmax( (1-entropy_prior) * output, dim=0)  + F.log_softmax(image.cuda(),dim=0)
+                # # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( entropy_prior * image.cuda(),dim=0) 
+                # # posterior = lamb* entropy_liki * F.log_softmax(output, dim=0)  +   F.log_softmax( (1-entropy_liki) * image.cuda(),dim=0)
+                # # posterior = lamb* (1-entropy_liki) * F.log_softmax(output, dim=0)  +   F.log_softmax( (1-entropy_prior) * image.cuda(),dim=0)
+                # # output = F.log_softmax( (1-entropy_prior) * output, dim=0)
 
-                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( (1-entropy_liki) * image.cuda(),dim=0)
-                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( image.cuda(),dim=0)
-                # print('*************')
-                # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( image.cuda(),dim=0)
-                # posterior = lamb * (1-entropy_prior) * output + image.cuda()
-                # posterior = torch.log((1-entropy_prior) * output) + torch.log(image.cuda())
-                # posterior = (1-entropy_prior) * output * image.cuda()
-                # posterior = output * image.cuda()
+                # # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( (1-entropy_liki) * image.cuda(),dim=0)
+                # # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( image.cuda(),dim=0)
+                # # print('*************')
+                # # posterior = lamb* F.log_softmax( entropy_liki * output, dim=0)  + F.log_softmax( image.cuda(),dim=0)
+                # # posterior = lamb * (1-entropy_prior) * output + image.cuda()
+                # # posterior = torch.log((1-entropy_prior) * output) + torch.log(image.cuda())
+                # # posterior = (1-entropy_prior) * output * image.cuda()
+                # # posterior = output * image.cuda()
 
             else: 
                 # print('label shape:{} output shape:{}'.format(label.shape, output.shape))
@@ -355,48 +389,50 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
         mAcc = acc.mean().item()
         # print('*********')
         # print(gts)
-        # print_iou(iou, acc, mIoU, mAcc)  ## original
+        print_iou(iou, acc, mIoU, mAcc)  ## original
         ##################
         
         # print(logits.shape)  # torch.Size([50, 19, 1080, 1920])
         # print('*********' )
         # print(labels.shape) # torch.Size([50, 1080, 1920])
 
-        ## SCE calibration metric 
-        sce_criterion_seg = ClasswiseECELossSeg().cuda()
-        sce, class_sce_lst = sce_criterion_seg(logits, labels)   
-        # print(class_sce_lst)   
+        if args.calibrationcalc:
 
-        ## ACE Calibration metric
-        # aece_criterion_seg = ClasswiseAdaptiveECELoss().cuda()
-        # aece, class_aece_lst= aece_criterion_seg(logits, labels)
+            # SCE calibration metric 
+            sce_criterion_seg = ClasswiseECELossSeg().cuda()
+            sce, class_sce_lst = sce_criterion_seg(logits, labels)   
+            print(class_sce_lst)   
 
-        save_path = '/home/sidd_s/Prior_Net/class_sce_plots'
-        num_classes = len(class_sce_lst)
-        # print(len(class_aece_lst[0]))
-        for c in tqdm(range(num_classes)): 
-            plt.figure()
-            acc_lst =  [val[0] for val in class_sce_lst[c]]     
-            conf_lst = [val[1] for val in class_sce_lst[c]]
-            plt.plot(acc_lst, conf_lst ,'--o', label='class ' + str(c))
-            plt.plot([0.0, 1.0], [0.0, 1.0], label = 'perfect')
-            plt.title('Classwise AECE for Class ' + str(c)) 
-            plt.legend()
-            plt.savefig(os.path.join(save_path, 'Class_' + str(c) + '.png')) 
+            # ACE Calibration metric
+            aece_criterion_seg = ClasswiseAdaptiveECELoss().cuda()
+            aece, class_aece_lst= aece_criterion_seg(logits, labels)
+
+            save_path = '/home/sidd_s/Prior_Net/class_sce_plots'
+            num_classes = len(class_sce_lst)
+            # print(len(class_aece_lst[0]))
+            for c in tqdm(range(num_classes)): 
+                plt.figure()
+                acc_lst =  [val[0] for val in class_sce_lst[c]]     
+                conf_lst = [val[1] for val in class_sce_lst[c]]
+                plt.plot(acc_lst, conf_lst ,'--o', label='class ' + str(c))
+                plt.plot([0.0, 1.0], [0.0, 1.0], label = 'perfect')
+                plt.title('Classwise AECE for Class ' + str(c)) 
+                plt.legend()
+                plt.savefig(os.path.join(save_path, 'Class_' + str(c) + '.png')) 
         
-        # print('yo')             
+            print('yo')             
+                
+            print(sce.item()) 
+            # ACE Calibration metric 
+            aece_criterion_seg = ClasswiseAdaptiveECELoss().cuda()
+            aece, class_aece_lst, bin_bound = aece_criterion_seg(logits, labels)
+            print(aece.item())
+            print(class_aece_lst)
+            print('*******************')
+            print(bin_bound) 
             
-        # print(sce.item()) 
-        ## ACE Calibration metric 
-        # aece_criterion_seg = ClasswiseAdaptiveECELoss().cuda()
-        # aece, class_aece_lst, bin_bound = aece_criterion_seg(logits, labels)
-        # print(aece.item())
-        # print(class_aece_lst)
-        # print('*******************')
-        # print(bin_bound) 
-        
         # print('*****************************')
-        # mean_acc = Tp/totalp 
+        # # mean_acc = Tp/totalp 
         # print('mean_acc: ', mean_acc)
         # print('*****************************')
 
@@ -541,7 +577,7 @@ def save_pred(pred, direc, name):
     
     # if thresholding for binary segmentation 
     # pred[pred<0.5] = 0
-    # pred[pred>=0.5] = 1
+    # pred[pred>=0.5] = 1  
     
     # pred = np.asarray(np.argmax(pred, axis=0))
     # print(pred.shape)
@@ -585,7 +621,7 @@ def save_pred(pred, direc, name):
 
 
 def main():
-    os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '6'
     args = get_arguments()
     with open('./config/config.yml') as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
@@ -619,7 +655,8 @@ def main():
     # # load params
     # model.load_state_dict(new_state_dict)
 
-    model.eval().cuda()
+    model.eval().cuda() 
+    # print(model)
     testloader  = init_test_dataset(cfg, args.dataset, set='val')
     # print(len(testloader))
     # print('****************************************************')

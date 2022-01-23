@@ -52,7 +52,7 @@ class BaseDataSet(data.Dataset):
 
         if not max_iters==None:
             # print(len(self.img_ids))
-            # self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids))) #org
+            # self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids))) # org
             # print(len(self.img_ids))
             pass
 
@@ -185,7 +185,7 @@ class BaseDataSet(data.Dataset):
         elif dataset == 'darkzurich':
             for name in self.img_ids:
                 img_file = osp.join(self.root, "rgb_anon/%s_rgb_anon.png" % (name))
-                label_root = '/home/sidd_s/scratch/data_hpc/data/dark_zurich_val/gt'
+                label_root = '/home/sidd_s/scratch/dataset/dark_zurich_val/gt'
                 if self.cfg.uncertain: 
                     label_file =osp.join(label_root, '%s_gt_label_valid_TrainIds.png' % (name)) 
                     # label_file =osp.join(label_root, '%s_gt_label_inv_TrainIds.png' % (name))  # here ignoring the uncertain regions 
@@ -783,9 +783,9 @@ class BaseDataSet(data.Dataset):
                     
                     transforms_compose_img = transforms.Compose([
                         transforms.Resize((540, 960)),
-                        transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), ## added for aug2 exp (only this in aug3)
+                        # transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), ## added for aug2 exp (only this in aug3) ## use only in training 
                         transforms.ToTensor(),
-                        transforms.Normalize(*mean_std), 
+                        transforms.Normalize(*mean_std), ## use only in training 
                         # transforms.RandomErasing() ## added for aug2 exp 
                     ])
                     image = Image.open(datafiles["img"]).convert('RGB') 
