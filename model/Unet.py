@@ -50,12 +50,12 @@ def outconv(in_channels, out_channels):
  
 
 class UNet_mod(nn.Module):
-  def __init__(self, n_channels, n_class, fake_ce):
+  def __init__(self, n_channels, n_class, small):
     super(UNet_mod, self).__init__()
     self.n_channels = n_channels
     self.n_class = n_class
-    self.fake_ce = fake_ce ## for reducing model complexity in order to reduce for overfitting  ## back to org ...better to go ahead with the bigger size unet model its giving better performance as compare to the smaller model one....so my hypothesis is that more regularisation is required instead of decreasing the model complexing for correction net...
-
+    self.small = small 
+    
     self.inc = double_conv(self.n_channels, 64)
     self.down1 = down(64,128)
     self.down2 = down(128,256)
@@ -69,7 +69,7 @@ class UNet_mod(nn.Module):
     self.out = outconv(64,self.n_class)
   
   def forward(self, x):
-    if self.fake_ce: 
+    if self.small: 
       x1 = self.inc(x)
       x2 = self.down1(x1)
       x3 = self.down2(x2)

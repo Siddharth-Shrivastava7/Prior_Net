@@ -281,7 +281,6 @@ class BaseTrainer(object):
                 # out = post.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach()
                 out = seg_pred.cuda() * entropy_map_norm.detach()  + (1-entropy_map_norm.detach()) * img.cuda().detach()
 
-
                 # post = F.softmax(post, dim=1) ## not using 
         
                 # seg_loss = loss(seg_pred, seg_label) ## original
@@ -294,7 +293,6 @@ class BaseTrainer(object):
         print('---------------------')
         print('Validation seg loss: {} at epoch {}'.format(total_loss,epoch))
         return total_loss
-    
 
 class CrossEntropy2d(nn.Module):
 

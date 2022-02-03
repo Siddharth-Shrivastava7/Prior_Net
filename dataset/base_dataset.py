@@ -406,7 +406,7 @@ class BaseDataSet(data.Dataset):
                     "img": img_file,
                     "label":label_file,
                     "name": name
-                })
+                }) 
         
         elif dataset == 'dz_val_tensor':
             for name in self.img_ids:

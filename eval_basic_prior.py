@@ -9,7 +9,7 @@ from torch.utils import data
 import torch.nn as nn
 import os.path as osp
 import yaml
-# from utils.logger import Logger 
+# from utils.logger import Logger  
 from dataset.dataset import *
 from easydict import EasyDict as edict
 from tqdm import tqdm
@@ -445,9 +445,9 @@ def compute_iou(model, testloader, args, da_model, lightnet, weights, fake_ce):
         return iou, mIoU, acc, mAcc
 
 def makecalipredgt(model, testloader, args, da_model, lightnet, weights):
-    interp = nn.Upsample(size=(1080,1920), mode='bilinear', align_corners=True)   # dark_zurich -> (1080,1920) 
+    interp = nn.Upsample(size=(1080,1920), mode='bilinear', align_corners=True)   #dark_zurich -> (1080,1920) 
     # print('******************') 
-    model = model.eval()
+    model = model.eval() 
     all_pred = []
     all_true = []
     

@@ -1,0 +1,87 @@
+note: 'train'
+# configs of data
+        
+model: 'unet_gt_perturb_onepix_singlech'
+train: True
+multigpu: False 
+fixbn: False  # check this also ..  chg 
+fix_seed: True
+screen: True
+small: False
+restore_from: None
+
+## eval 
+eval_restore_from: '../scratch/saved_models/acdc/dannet/train/unet_gt_perturb_dannet_shuffle_weights2.pth'
+method_eval: 'shuffle_w_weights'
+
+# dannet model pred 
+model_dannet: 'PSPNet'
+restore_from_da: '/home/sidd_s/scratch/saved_models/DANNet/dannet_psp.pth'
+restore_light_path: '/home/sidd_s/scratch/saved_models/DANNet/dannet_psp_light.pth'
+one_hot: True 
+
+# Optimizaers
+learning_rate: 1.0e-4 #changed from 7.5e-5 
+epochs: 250 #chg
+weight_decay: 0.0005
+momentum: 0.9 
+power: 0.9 
+
+# Logging 
+print_freq: 1 ## epochs   
+save_freq: 1 ## epochs
+tensorboard: True
+val: True
+val_freq: 5 # 372 ..after one epoch for cityscapes train set (2975) with batch 8
+
+
+# Dataset 
+train: 'acdc_train_label' #chg for pred label
+val: 'acdc_val_label' #chg
+worker: 4
+batch_size: 4 #chg
+num_classes: 19 #chg
+num_channels: 1 # chg 
+
+#Transforms in training data
+input: 720 # resize  
+crop: 512 # crop of resized image 
+scale_min: 0.5
+scale_max: 1.5
+
+# Model hypers
+init_weight: '/home/sidd_s/scratch/saved_models/city_pretrained_deeplab/model410_city_deeplabv2.pth' 
+
+snapshot: '../scratch/saved_models/acdc/dannet'
+log: './log/'
+
+cityscapes: {
+        data_dir: '../scratch/data/cityscapes/',
+        data_list: './dataset/list/cityscapes/train.txt',
+        input_size: [1024, 512]
+        }
+cityscapes_val: {
+        data_dir: '../scratch/data/cityscapes/',
+        data_list: './dataset/list/cityscapes/val.txt',
+        input_size: [1024, 512]
+        }
+dark_zurich_val: { 
+        data_dir: '/home/cse/staff/sid97.cstaff/scratch/data/dark_zurich/val/',
+        data_list: './dataset/dark_zurich/val.txt',
+        input_size: [1920, 1080]
+        }
+acdc_train_label: {
+        data_dir:  '/home/sidd_s/scratch/dataset',
+        data_list: './dataset/list/acdc/acdc_trainrgb.txt',
+        input_size: [1920, 1080]
+}
+acdc_val_label: {
+        data_dir: '/home/sidd_s/scratch/dataset',
+        data_list: './dataset/list/acdc/acdc_valrgb.txt',
+        input_size: [1920, 1080]
+}
+
+darkzurich: {
+        data_dir: '/home/sidd_s/scratch/dataset/dark_zurich_val',
+        data_list: './dataset/list/darkzurich/val.txt'
+}

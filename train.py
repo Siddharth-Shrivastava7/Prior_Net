@@ -33,7 +33,6 @@ def main():
     config, writer = init_config("config/config.yml", sys.argv)
     # config.num_classes=19 
     # config.num_channels = 19
-
     model = init_model(config)
     trainer = Trainer(model, config, writer)
     trainer.train()
