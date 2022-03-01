@@ -5,7 +5,9 @@ from torch.utils import data
 import torchvision.transforms as transforms  
 import os, sys 
 import torch.backends.cudnn as cudnn 
-from model.Unet import * 
+# from model.unet_model import * 
+# from model.Unet import * 
+from model.unet_resnetenc import *
 from init_config import * 
 from easydict import EasyDict as edict 
 import numpy as np  
@@ -26,10 +28,10 @@ def init_train_data(cfg):
     train_env = cfg[cfg.train] 
     cfg.train_data_dir = train_env.data_dir
     cfg.train_data_list = train_env.data_list
-    cfg.input_size = train_env.input_size  
+    # cfg.input_size = train_env.input_size  
 
     trainloader = data.DataLoader(
-            BaseDataSet(cfg, cfg.train_data_dir, cfg.train_data_list, cfg.train, cfg.num_classes, ignore_label=255, set='train'),
+            BaseDataSet(cfg, cfg.train_data_dir, cfg.train_data_list, cfg.train, cfg.num_class, ignore_label=255, set='train'),
             batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.worker, pin_memory=True)
 
     return trainloader,cfg
@@ -38,14 +40,13 @@ def init_val_data(cfg):
     val_env = cfg[cfg.val] 
     cfg.val_data_dir = val_env.data_dir
     cfg.val_data_list = val_env.data_list
-    cfg.input_size = val_env.input_size  
+    # cfg.input_size = val_env.input_size  
 
     valloader = data.DataLoader(
-            BaseDataSet(cfg, cfg.val_data_dir, cfg.val_data_list, cfg.val, cfg.num_classes, ignore_label=255, set='val'),
+            BaseDataSet(cfg, cfg.val_data_dir, cfg.val_data_list, cfg.val, cfg.num_class, ignore_label=255, set='val'),
             batch_size=1, shuffle=True, num_workers=cfg.worker, pin_memory=True)
 
     return valloader
-    
 
 class BaseDataSet(data.Dataset): 
     def __init__(self, cfg, root, list_path,dataset, num_class, ignore_label=255, set='val'): 
@@ -82,6 +83,42 @@ class BaseDataSet(data.Dataset):
                         "name": name
                     }) 
 
+        elif self.dataset == 'bdd_city_trval':   
+
+            with open(self.list_path[0] + 'bdd_' + self.set + '.txt') as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields)  
+            
+            
+            with open(self.list_path[1] + self.set + '.txt') as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields) 
+
+
+            for name in self.img_ids:  
+                ## bdd
+                if name.find('.jpg')!=-1: 
+                    img_file = osp.join(self.root[0], self.set, name)
+                    label_name = name.split('.')[0] + '_train_id.png' 
+                    label_root = self.root[0].replace('images', 'labels')
+                    label_file = osp.join(label_root, self.set, label_name)   
+
+                ## city 
+                else:
+                    img_file = osp.join(self.root[1] ,'leftImg8bit', self.set, name)
+                    label_name = name.replace('leftImg8bit', 'gtFine_labelIds') 
+                    label_file = osp.join(self.root[1], 'gtFine', self.set, label_name) 
+        
+                self.files.append({
+                            "img": img_file,
+                            "label":label_file,
+                            "name": name
+                        })
+
+        
+
     def __len__(self):
         return len(self.files) 
     
@@ -91,20 +128,20 @@ class BaseDataSet(data.Dataset):
         
         try:  
             if self.dataset in ['acdc_train_label', 'acdc_val_label']: 
-                mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  ## image net mean and std  
-                
+
                 if self.set=='val': 
-                
                     transforms_compose_label = transforms.Compose([
                             transforms.Resize((1080,1920), interpolation=Image.NEAREST)])  
 
                     label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label)  
+                    label = torch.tensor(np.array(label)) 
                     label_perturb = np.array(label)    
-
+                    
                     ## random single pixel 
                     rand_x = np.random.randint(label_perturb.shape[0])  
                     rand_y = np.random.randint(label_perturb.shape[1])   
-                    # print(rand_x, rand_y) 
+                    # print(rand_x, rand_y)  
                     
                     actual_label = label_perturb[rand_x, rand_y] 
                     while True and actual_label!=255: 
@@ -112,29 +149,29 @@ class BaseDataSet(data.Dataset):
                         if actual_label!= perturb_label: break  
                     if actual_label == 255: 
                         perturb_label = 255 
-                    label_perturb[rand_x, rand_y]  = perturb_label 
-
-                    label = transforms_compose_label(label) 
-                    label = torch.tensor(np.array(label)) 
-                    label_perturb = Image.fromarray(label_perturb)
-                    label_perturb = transforms_compose_label(label_perturb)      
-                    label_perturb_tensor = torch.tensor(np.array(label_perturb))  
-                    label_perturb_tensor = label_perturb_tensor.unsqueeze(dim=2) ## one channel   
-
-                    ## experiment not giving the 19 dim tensor 
-                    # label_perturb_tensor[label_perturb_tensor==255] = 19  
-                    # label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
-                    # label_perturb_tensor = label_perturb_tensor[:, :, :19]  
-                
-                else: 
+                    label_perturb[rand_x, rand_y]  = perturb_label  
                     
+                    if self.cfg.one_ip_channel:  
+                        label_perturb = Image.fromarray(label_perturb)
+                        label_perturb = transforms_compose_label(label_perturb)     
+                        label_perturb_tensor = torch.tensor(np.array(label_perturb))  
+                        label_perturb_tensor = label_perturb_tensor.unsqueeze(dim=2)     
+                    else:  
+                        label_perturb_tensor = torch.tensor(label_perturb)
+                        label_perturb_tensor[label_perturb_tensor==255] = 19  
+                        label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
+                        label_perturb_tensor = label_perturb_tensor[:, :, :19]    
+                else: 
                     transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)]) 
-                    label = Image.open(datafiles["label"])  
+                    label = Image.open(datafiles["label"])   
+                    label = transforms_compose_label(label)   
+                    label = torch.tensor(np.array(label))  
+                    # print(torch.unique(label))
+                
                     ## perturbation 
                     label_perturb = np.array(label)  
 
                     ## random single pixel  
-
                     rand_x = np.random.randint(label_perturb.shape[0])  
                     rand_y = np.random.randint(label_perturb.shape[1])
                     # print(rand_x, rand_y)     
@@ -146,19 +183,18 @@ class BaseDataSet(data.Dataset):
                         perturb_label = 255 
                     label_perturb[rand_x, rand_y]  = perturb_label
 
+                    # print(np.sum(label_perturb!=label)) # 1 
 
-                    label = transforms_compose_label(label)   
-                    label = torch.tensor(np.array(label))  
-
-                    label_perturb = Image.fromarray(label_perturb)
-                    label_perturb = transforms_compose_label(label_perturb)      
-                    label_perturb_tensor = torch.tensor(np.array(label_perturb))  
-                    label_perturb_tensor = label_perturb_tensor.unsqueeze(dim=2) ## one channel  
-                    
-                    ## experiment not giving the 19 dim tensor 
-                    # label_perturb_tensor[label_perturb_tensor==255] = 19  
-                    # label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
-                    # label_perturb_tensor = label_perturb_tensor[:, :, :19]  
+                    if self.cfg.one_ip_channel: 
+                        label_perturb = Image.fromarray(label_perturb)
+                        label_perturb = transforms_compose_label(label_perturb)      
+                        label_perturb_tensor = torch.tensor(np.array(label_perturb))  
+                        label_perturb_tensor = label_perturb_tensor.unsqueeze(dim=2) ## one channel     
+                    else:  
+                        label_perturb_tensor = torch.tensor(label_perturb)
+                        label_perturb_tensor[label_perturb_tensor==255] = 19  
+                        label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
+                        label_perturb_tensor = label_perturb_tensor[:, :, :19] 
 
         except: 
             print('**************') 
@@ -169,8 +205,12 @@ class BaseDataSet(data.Dataset):
         return label_perturb_tensor, label, name
                 
 
-def init_model(cfg):
-    model = UNet_mod(cfg.num_channels, cfg.num_classes, cfg.small).cuda()
+def init_model(cfg): 
+    # unet = cfg.unet
+    # model = UNet(unet.enc_chs, unet.dec_chs, unet.out_chs).cuda() 
+    # model = UNet_mod(cfg.num_channels, cfg.num_class, cfg.small).cuda() ## previous unet model   
+    model = UNetWithResnet50Encoder(cfg.num_ip_channels, cfg.num_class) 
+
     if cfg.restore_from != 'None':
         params = torch.load(cfg.restore_from)
         model.load_state_dict(params)
@@ -193,7 +233,7 @@ class BaseTrainer(object):
         self.config = config
         self.output = {}
         self.writer = writer
-        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_class, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
 
     def forward(self):
         pass
@@ -234,12 +274,21 @@ class BaseTrainer(object):
         for i_iter, batch in tqdm(enumerate(testloader)):
             label_perturb_tensor, seg_label, name = batch 
             label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1)  
-            seg_pred = self.model(label_perturb_tensor.float().cuda())    
+            seg_pred = self.model(label_perturb_tensor.float().cuda())     
+            seg_pred = F.interpolate(seg_pred, (label_perturb_tensor.shape[2], label_perturb_tensor.shape[3]))  ## for making size equal of both prediction and gt   
+            seg_label = seg_label.long().cuda() # cross entropy 
 
-            seg_label = seg_label.long().cuda() # cross entropy   
-            loss = CrossEntropy2d() # ce loss  
-            seg_loss = loss(seg_pred, seg_label) 
-            total_loss += seg_loss.item()
+            if self.config.mse: 
+                seg_pred = seg_pred.squeeze() 
+                seg_label = seg_label.squeeze() 
+                loss = nn.MSELoss()  
+                
+            else: 
+                # loss = CrossEntropy2d() # ce loss   
+                loss = nn.CrossEntropyLoss(ignore_index= 255)       
+            
+            seg_loss = loss(seg_pred, seg_label)
+            total_loss += seg_loss.item()  
 
         total_loss /= len(iter(testloader))
         print('---------------------')
@@ -292,61 +341,34 @@ class Trainer(BaseTrainer):
         self.model = model
         self.config = config
         self.writer = writer
-        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_class, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
         
     def iter(self, batch):
         
-        label_perturb_tensor, seg_label, name = batch
-    
-        ## perturb the input tensor by one pixel randomly to make wrong version of the input 
-        ## w/o background concentrating 
-        
-        # print(seg_label.shape) # torch.Size([4, 1080, 1920]) 
-        # batch_ind_wo_backgr = [torch.sort(np.argwhere(seg_label[bt] != 255))[0] for bt in range(seg_label.shape[0])]       
-        # batch_total_pix_wo_backgr = [batch_ind_wo_backgr[bt].shape[1] for bt in range(seg_label.shape[0])]   
-        # batch_rand_patchind = [np.random.randint(50, batch_total_pix_wo_backgr[bt] - 50) for bt in range(seg_label.shape[0])]  
-        # batch_rand_patchpixs = [batch_ind_wo_backgr[bt][:,batch_rand_patchind[bt]-50:batch_rand_patchind[bt]+50] for bt in range(seg_label.shape[0])]   
-        # # print(batch_rand_patchpixs[0].shape) # torch.Size([2, 100])
-        # batch_actual_labelind = [seg_label[bt, batch_rand_patchpixs[bt][0, np.random.randint(100)].item(), batch_rand_patchpixs[bt][1, np.random.randint(100)].item()] for bt in range(seg_label.shape[0])]  
-        # seg_label_perturb = seg_label.detach().clone()  
+        label_perturb_tensor, seg_label, name = batch 
 
-        # for bt in range(seg_label.shape[0]):
-        #     while True:   
-        #         perturb_label = np.random.randint(19)   
-        #         if batch_actual_labelind[bt].item() != perturb_label: break  
-        #     # print(batch_rand_patchpixs[0])   
-            
-        #     for i in range(batch_rand_patchpixs[bt].shape[1]): 
-        #         seg_label_perturb[bt, batch_rand_patchpixs[bt][0, i].item(), batch_rand_patchpixs[bt][1,i].item()] = perturb_label
-                     
-        # input_tensor = seg_label_perturb.detach().clone()   
-        # input_tensor[input_tensor==255] = 19 # background class 
-        # input_tensor = F.one_hot(input_tensor.to(torch.int64), 20) ## including the background class  
-        # input_tensor = input_tensor[:,:, :, :19] # till the first 19 class of foreground  # (b,h,w,c)  
-        # input_tensor = input_tensor.transpose(3,2).transpose(2,1) # (b,c,h,w)   
-        
-        """randx_pix = np.random.randint(input_tensor.shape[2]-10)
-        randy_pix = np.random.randint(input_tensor.shape[2]-10)
-        # print(randx_pix, randy_pix) 
-        
-        
-        for x in range(10):
-            for y in range(10):  
-                org_batch_val = input_tensor[:, :, randx_pix + x, randy_pix + y] 
-                # print(org_batch_val.shape)  # (4,19) 
-                # print(org_batch_val)  # one hot  
-                shuffle_inds = torch.randperm(org_batch_val.shape[1]) 
-                # print(shuffle_inds)   
-                input_tensor[:, :, randx_pix + x, randy_pix + y] = org_batch_val[:, shuffle_inds]
-"""                
         label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1)  
-        seg_pred = self.model(label_perturb_tensor.float().cuda()) 
-        # print(seg_label)  
-        seg_label = seg_label.long().cuda() # cross entropy   
-        loss = CrossEntropy2d() # ce loss  
-        seg_loss = loss(seg_pred, seg_label)   
-        self.losses.seg_loss = seg_loss
-        loss = seg_loss  
+        seg_pred = self.model(label_perturb_tensor.float().cuda())  
+        seg_pred = F.interpolate(seg_pred, (label_perturb_tensor.shape[2], label_perturb_tensor.shape[3]))  ## for making size equal of both prediction and gt 
+              
+        if self.config.mse: 
+            seg_pred = seg_pred.squeeze() 
+            seg_label = seg_label.float().cuda() 
+            # print(torch.unique(seg_pred[0])) 
+            # print(torch.unique(seg_label[0])) 
+            # seg_pred = F.sigmoid(seg_pred) 
+            # seg_label = seg_label / 255.0  
+            loss = nn.MSELoss() 
+
+        else: 
+            seg_label = seg_label.long().cuda() # cross entropy
+            # loss = CrossEntropy2d() # ce loss     
+            loss = nn.CrossEntropyLoss(ignore_index= 255)
+           
+        
+        seg_loss = loss(seg_pred, seg_label)
+        self.losses.seg_loss = seg_loss  
+        loss = seg_loss 
         loss.backward()   
 
     def train(self):
@@ -380,7 +402,7 @@ class Trainer(BaseTrainer):
                 # adjust_learning_rate(self.optim, cu_iter, max_iter, self.config)
                 self.optim.zero_grad()
                 self.losses = edict({})
-                losses = self.iter(batch)  
+                losses = self.iter(batch)   
 
                 train_epoch_loss += self.losses['seg_loss'].item()
                 print('train_iter_loss:', self.losses['seg_loss'].item())
@@ -421,14 +443,14 @@ class Trainer(BaseTrainer):
 
 
 def main(): 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '5' 
+    os.environ['CUDA_VISIBLE_DEVICES'] = '7' 
     torch.manual_seed(1234)
     torch.cuda.manual_seed(1234)
     np.random.seed(1234)
     random.seed(1234)
     cudnn.enabled = True
     cudnn.benchmark = True   
-    config, writer = init_config("config/config_exp.yml", sys.argv)
+    config, writer = init_config("config/config_exp.yml", sys.argv) 
     model = init_model(config)
     trainer = Trainer(model, config, writer)
     trainer.train() 

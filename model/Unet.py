@@ -10,7 +10,7 @@ def double_conv(in_channels, out_channels):
     nn.Conv2d(in_channels, out_channels, kernel_size = 3, padding=1),
     nn.BatchNorm2d(out_channels),
     nn.ReLU(inplace=True),
-    nn.Dropout(p=0.9), ## regualarisation..using high dropout rate of 0.9...lets see for few moments...
+    # nn.Dropout(p=0.9), ## regualarisation..using high dropout rate of 0.9...lets see for few moments...
     nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
     nn.BatchNorm2d(out_channels),
     nn.ReLU(inplace=True),
@@ -50,12 +50,12 @@ def outconv(in_channels, out_channels):
  
 
 class UNet_mod(nn.Module):
-  def __init__(self, n_channels, n_class, small):
+  def __init__(self, n_channels, n_class, small=False):
     super(UNet_mod, self).__init__()
     self.n_channels = n_channels
     self.n_class = n_class
     self.small = small 
-    
+
     self.inc = double_conv(self.n_channels, 64)
     self.down1 = down(64,128)
     self.down2 = down(128,256)
@@ -95,13 +95,13 @@ class UNet_mod(nn.Module):
 
     return logits
 
-# if __name__ == '__main__': 
-#   os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+if __name__ == '__main__': 
+  os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
-#   print('*********************Model Summary***********************')
-#   model = UNet_mod(n_channels=19, n_class = 19, fake_ce = True) 
-#   if torch.cuda.is_available(): 
-#     model = model.cuda()
+  print('*********************Model Summary***********************')
+  model = UNet_mod(n_channels=19, n_class = 19) 
+  if torch.cuda.is_available(): 
+    model = model.cuda()
 
-#   print(summary(model, (19, 512, 512))) 
-## original 
+  print(summary(model, (19, 512, 512))) 
+# original 

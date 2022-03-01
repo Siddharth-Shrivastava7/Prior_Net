@@ -57,18 +57,18 @@ class BaseDataSet(data.Dataset):
         self.num_class = num_class 
         self.ignore_label = ignore_label
         self.cfg = cfg  
-        self.img_ids = []  
+        self.img_ids = []   
+        self.files = []
 
-        with open(self.list_path) as f: 
-            for item in f.readlines(): 
-                fields = item.strip().split('\t')[0]
-                if ' ' in fields:
-                    fields = fields.split(' ')[0]
-                self.img_ids.append(fields)  
-        
-        self.files = []  
         if self.dataset == 'acdc_train_label' or self.dataset == 'acdc_val_label':  
             
+            with open(self.list_path) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    if ' ' in fields:
+                        fields = fields.split(' ')[0]
+                    self.img_ids.append(fields)  
+          
             for name in self.img_ids: 
                 img_file = osp.join(self.root, name) 
                 replace = (("_rgb_anon", "_gt_labelTrainIds"), ("acdc_trainval", "acdc_gt"), ("rgb_anon", "gt"))
@@ -80,45 +80,241 @@ class BaseDataSet(data.Dataset):
                         "img": img_file,
                         "label":label_file,
                         "name": name
-                    }) 
+                    })  
 
+        elif self.dataset == 'perturb_bdd_city':  
+            
+            ## texture perturb bdd dataset read 
+            with open(self.list_path[0]) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields)  
+            
+            ## texture perturb cityscapes dataset read 
+            with open(self.list_path[1]) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields)  
+            
+            for name in self.img_ids: 
+                if name.find('.jpg')!=-1: 
+                    img_file = osp.join(self.root[0], name)
+                    label_name = name.split('.')[0] + '_train_id.png' 
+                    label_root = self.root[0].replace('texture_variant/bdd_acdc', 'bdd100k_seg/bdd100k/seg/labels/train')
+                    label_file = osp.join(label_root, label_name)   
+                
+                else: 
+                    name_l = name.split('/')[-1]
+                    img_file = osp.join(self.root[1], name_l)
+                    label_name = name.replace('leftImg8bit', 'gtFine_labelIds') 
+                    label_root = self.root[1].replace("texture_variant/cityscapes_acdc", "cityscapes")
+                    label_file = osp.join(label_root, 'gtFine/train',  label_name)
+
+                self.files.append({
+                        "img": img_file,
+                        "label":label_file,
+                        "name": name
+                    })  
+
+        elif self.dataset == 'acdc_bdd_city':  
+
+            ## acdc read txt 
+            with open(self.list_path[0]) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields)  
+            
+            ## bdd read txt
+            with open(self.list_path[1]) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields) 
+             
+            ## city read txt 
+            with open(self.list_path[2]) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields)
+
+            for name in self.img_ids:  
+                ## bdd
+                if name.find('.jpg')!=-1: 
+                    img_file = osp.join(self.root[1], name)
+                    label_name = name.split('.')[0] + '_train_id.png' 
+                    label_root = self.root[1].replace('images', 'labels')
+                    label_file = osp.join(label_root, label_name) 
+                
+                ## city 
+                elif len(name.split('/')) == 2:
+                    img_file = osp.join(self.root[2] ,'leftImg8bit/train', name)
+                    label_name = name.replace('leftImg8bit', 'gtFine_labelIds') 
+                    label_file = osp.join(self.root[2], 'gtFine/train',  label_name)
+            
+                ## acdc 
+                else: 
+                    img_file = osp.join(self.root[0], name) 
+                    replace = (("_rgb_anon", "_gt_labelTrainIds"), ("acdc_trainval", "acdc_gt"), ("rgb_anon", "gt"))
+                    nm = name
+                    for r in replace: 
+                        nm = nm.replace(*r) 
+                    label_file = osp.join(self.root[0], nm) 
+                
+                self.files.append({
+                            "img": img_file,
+                            "label":label_file,
+                            "name": name
+                        }) 
+
+        elif self.dataset == 'bdd_city':  
+
+            with open(self.list_path[0]) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields)  
+            
+            with open(self.list_path[1]) as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields) 
+            
+
+            for name in self.img_ids:  
+                ## bdd
+                if name.find('.jpg')!=-1: 
+                    img_file = osp.join(self.root[0], name)
+                    label_name = name.split('.')[0] + '_train_id.png' 
+                    label_root = self.root[0].replace('images', 'labels')
+                    label_file = osp.join(label_root, label_name) 
+                
+                ## city 
+                else:
+                    img_file = osp.join(self.root[1] ,'leftImg8bit/train', name)
+                    label_name = name.replace('leftImg8bit', 'gtFine_labelIds') 
+                    label_file = osp.join(self.root[1], 'gtFine/train',  label_name)
+        
+                self.files.append({
+                            "img": img_file,
+                            "label":label_file,
+                            "name": name
+                        }) 
+
+        
+        elif self.dataset == 'bdd_city_trval':   
+
+            with open(self.list_path[0] + 'bdd_' + self.set + '.txt') as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields)  
+            
+            
+            with open(self.list_path[1] + self.set + '.txt') as f: 
+                for item in f.readlines(): 
+                    fields = item.strip().split('\t')[0]
+                    self.img_ids.append(fields) 
+
+
+            for name in self.img_ids:  
+                ## bdd 
+                if name.find('.jpg')!=-1: 
+                    img_file = osp.join(self.root[0], self.set, name)
+                    label_name = name.split('.')[0] + '_train_id.png' 
+                    label_root = self.root[0].replace('images', 'labels')
+                    label_file = osp.join(label_root, self.set, label_name)   
+
+                ## city   
+                else:
+                    img_file = osp.join(self.root[1] ,'leftImg8bit', self.set, name)
+                    label_name = name.replace('leftImg8bit', 'gtFine_labelIds') 
+                    label_file = osp.join(self.root[1], 'gtFine', self.set, label_name) 
+        
+                self.files.append({
+                            "img": img_file,
+                            "label":label_file,
+                            "name": name
+                        })
+        
     def __len__(self):
         return len(self.files) 
     
     def __getitem__(self, index): 
         datafiles = self.files[index]
-        name = datafiles["name"]    
-        
+        name = datafiles["name"]      
+    
         try:  
-            if self.dataset in ['acdc_val_label']: 
+            if self.dataset in ['acdc_train_label', 'acdc_val_label']: 
+                mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  ## image net mean and std  
                 
-                mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-                transforms_compose_label = transforms.Compose([
-                            transforms.Resize((1080,1920), interpolation=Image.NEAREST)])  
+                if self.set=='val':  
 
-                label = Image.open(datafiles["label"])  
-                label = transforms_compose_label(label) 
-                label = torch.tensor(np.array(label)) 
+                    ## image for transforming  
+                    transforms_compose_img = transforms.Compose([
+                        transforms.Resize((540, 960)),
+                        transforms.ToTensor(),
+                        transforms.Normalize(*mean_std), ## use only in training 
+                    ])
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+                    image = transforms_compose_img(image)    
+                    image = torch.tensor(np.array(image)).float() 
                 
-        
-                ## image for transforming  
-                transforms_compose_img = transforms.Compose([
-                    transforms.Resize((540, 960)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(*mean_std), ## use only in training 
-                ])
+                    transforms_compose_label = transforms.Compose([
+                            transforms.Resize((1080,1920), interpolation=Image.NEAREST)])  
+                    label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label)   
+                    label = torch.tensor(np.array(label))  
+                    
+                else: 
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+
+                    transforms_compose_img = transforms.Compose([transforms.Resize((512,512)), transforms.ToTensor(), transforms.Normalize(*mean_std)]) 
+                    img_trans = transforms_compose_img(image) 
+                    image = torch.tensor(np.array(img_trans)).float() 
+                    
+                    transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)]) 
+                    label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label)   
+                    label = torch.tensor(np.array(label))   
+
+            elif self.dataset in ['perturb_bdd_city', 'acdc_bdd_city', 'bdd_city', 'bdd_city_trval']:  
+                mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  ## image net mean and std    
+
+                if self.set=='val':   
+                    ## image for transforming  
+                    transforms_compose_img = transforms.Compose([
+                        transforms.Resize((540, 960)),
+                        transforms.ToTensor(),
+                        transforms.Normalize(*mean_std), ## use only in training 
+                    ])
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+                    image = transforms_compose_img(image)    
+                    image = torch.tensor(np.array(image)).float() 
                 
-                image = Image.open(datafiles["img"]).convert('RGB') 
-                image = transforms_compose_img(image)    
-                image = torch.tensor(np.array(image)).float() 
-                
+                    transforms_compose_label = transforms.Compose([
+                            transforms.Resize((1080,1920), interpolation=Image.NEAREST)])  
+                    label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label)   
+                    label = torch.tensor(np.array(label))   
+
+                else: 
+                    image = Image.open(datafiles["img"]).convert('RGB') 
+
+                    transforms_compose_img = transforms.Compose([transforms.Resize((512,512)), transforms.ToTensor(), transforms.Normalize(*mean_std)])  
+                    img_trans = transforms_compose_img(image) 
+                    image = torch.tensor(np.array(img_trans)).float() 
+                    
+                    transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)]) 
+                    label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label)   
+                    label = torch.tensor(np.array(label))   
+            
+            
         except: 
-            print('**************') 
-            print(index)
+            # print('**************') 
+            # print(index)
             index = index - 1 if index > 0 else index + 1 
             return self.__getitem__(index) 
 
         return image, label, name
+
                 
 
 def init_model(cfg):
@@ -277,6 +473,42 @@ def compute_iou(model, testloader, cfg, da_model, lightnet, weights):
         
         return iou, mIoU, acc, mAcc
 
+def label_img_to_color(img, save_path=None): 
+
+    label_to_color = {
+        0: [128, 64,128],
+        1: [244, 35,232],
+        2: [ 70, 70, 70],
+        3: [102,102,156],
+        4: [190,153,153],
+        5: [153,153,153],
+        6: [250,170, 30],
+        7: [220,220,  0],
+        8: [107,142, 35],
+        9: [152,251,152],
+        10: [ 70,130,180],
+        11: [220, 20, 60],
+        12: [255,  0,  0],
+        13: [  0,  0,142],
+        14: [  0,  0, 70],
+        15: [  0, 60,100],
+        16: [  0, 80,100],
+        17: [  0,  0,230],
+        18: [119, 11, 32],
+        19: [0,  0, 0]
+        } 
+    img = np.array(img.cpu())
+    img_height, img_width = img.shape
+    img_color = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+    for row in range(img_height):
+        for col in range(img_width):
+            label = img[row][col] 
+            img_color[row, col] = np.array(label_to_color[label])  
+    if save_path:  
+        im = Image.fromarray(img_color) 
+        im.save(save_path)  
+    return img_color
+
 
 class BaseTrainer(object):
     def __init__(self, models, optimizers, loaders, config,  writer):
@@ -293,25 +525,41 @@ class BaseTrainer(object):
         self.model = self.model.eval() 
         total_loss = 0
         testloader = init_val_data(self.config) 
+        iter = 0
 
         ## not calculating loss for now 
-        # for i_iter, batch in tqdm(enumerate(testloader)):
-        #     label_perturb_tensor, seg_label, name = batch 
+        for i_iter, batch in tqdm(enumerate(testloader)):
+            label_perturb_tensor, seg_label, name = batch 
 
-        #     label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1)  
-        #     seg_pred = self.model(label_perturb_tensor.float().cuda())    
 
-        #     seg_label = seg_label.long().cuda() # cross entropy   
-        #     loss = CrossEntropy2d() # ce loss  
-        #     seg_loss = loss(seg_pred, seg_label) 
-        #     total_loss += seg_loss.item()   
+            seg_pred = self.model(label_perturb_tensor.float().cuda())  
 
-        # total_loss /= len(iter(testloader))
-        # print('---------------------')
-        # print('Validation seg loss: {}'.format(total_loss))  
+            if self.config.rgb:  
 
-        print("MIou calculation: ")    
-        iou, mIoU, acc, mAcc = compute_iou(self.model, testloader, self.config, self.da_model, self.lightnet, self.weights)  
+                iter = iter + 1 
+
+                seg_preds = torch.argmax(label_perturb_tensor, dim=1) 
+                seg_preds = [torch.tensor(label_img_to_color(seg_preds[sam], 'save_patch_ip/' + str(sam + iter) + '.png')) for sam in range(seg_pred.shape[0])]  
+
+                seg_preds = torch.argmax(seg_pred, dim=1) 
+                seg_preds = [torch.tensor(label_img_to_color(seg_preds[sam], 'save_patch/' + str(sam + iter) + '.png')) for sam in range(seg_pred.shape[0])] 
+
+
+
+
+            seg_label = seg_label.long().cuda() # cross entropy   
+            loss = CrossEntropy2d() # ce loss  
+            seg_loss = loss(seg_pred, seg_label) 
+            total_loss += seg_loss.item()   
+
+        total_loss /= len(iter(testloader))
+        print('---------------------')
+        print('Validation seg loss: {}'.format(total_loss))   
+
+
+
+        # print("MIou calculation: ")    
+        # iou, mIoU, acc, mAcc = compute_iou(self.model, testloader, self.config, self.da_model, self.lightnet, self.weights)  
 
         return total_loss
 

@@ -5,7 +5,9 @@ from torch.utils import data
 import torchvision.transforms as transforms  
 import os, sys 
 import torch.backends.cudnn as cudnn 
-from model.Unet import * 
+from model.Unet import *  
+from model.unet_model import * 
+from model.unet_resnetenc import *
 from init_config import * 
 from easydict import EasyDict as edict 
 import numpy as np  
@@ -18,7 +20,8 @@ from dataset.network.dannet_pred import pred
 from utils.optimize import * 
 import  torch.optim as optim 
 from PIL import Image  
-from tqdm import tqdm 
+from tqdm import tqdm  
+from sklearn.feature_extraction.image import extract_patches_2d
 
 
 ## dataset init 
@@ -29,7 +32,7 @@ def init_train_data(cfg):
     cfg.input_size = train_env.input_size  
 
     trainloader = data.DataLoader(
-            BaseDataSet(cfg, cfg.train_data_dir, cfg.train_data_list, cfg.train, cfg.num_classes, ignore_label=255, set='train'),
+            BaseDataSet(cfg, cfg.train_data_dir, cfg.train_data_list, cfg.train, cfg.num_class, ignore_label=255, set='train'),
             batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.worker, pin_memory=True)
 
     return trainloader,cfg
@@ -41,11 +44,47 @@ def init_val_data(cfg):
     cfg.input_size = val_env.input_size  
 
     valloader = data.DataLoader(
-            BaseDataSet(cfg, cfg.val_data_dir, cfg.val_data_list, cfg.val, cfg.num_classes, ignore_label=255, set='val'),
+            BaseDataSet(cfg, cfg.val_data_dir, cfg.val_data_list, cfg.val, cfg.num_class, ignore_label=255, set='val'),
             batch_size=1, shuffle=True, num_workers=cfg.worker, pin_memory=True)
 
     return valloader
-    
+
+def label_img_to_color(img, save_path=None): 
+
+    label_to_color = { 
+        0: [128, 64,128],
+        1: [244, 35,232],
+        2: [ 70, 70, 70],
+        3: [102,102,156],
+        4: [190,153,153],
+        5: [153,153,153],
+        6: [250,170, 30],
+        7: [220,220,  0],
+        8: [107,142, 35],
+        9: [152,251,152],
+        10: [ 70,130,180],
+        11: [220, 20, 60],
+        12: [255,  0,  0],
+        13: [  0,  0,142],
+        14: [  0,  0, 70],
+        15: [  0, 60,100],
+        16: [  0, 80,100],
+        17: [  0,  0,230],
+        18: [119, 11, 32],
+        19: [0,  0, 0]
+        } 
+    img = np.array(img.cpu())
+    img_height, img_width = img.shape
+    img_color = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+    for row in range(img_height):
+        for col in range(img_width):
+            label = img[row][col] 
+            img_color[row, col] = np.array(label_to_color[label])  
+    if save_path:  
+        im = Image.fromarray(img_color) 
+        im.save(save_path)  
+    return img_color
+
 
 class BaseDataSet(data.Dataset): 
     def __init__(self, cfg, root, list_path,dataset, num_class, ignore_label=255, set='val'): 
@@ -100,12 +139,62 @@ class BaseDataSet(data.Dataset):
                 label = torch.tensor(np.array(label)) 
 
                 label_perturb = np.array(label)   
+
+                if self.cfg.method_eval=='perturb': 
+                    ## random discrete discontinuous pixels 
+                    for _ in range(self.cfg.num_pix_perturb): 
+                        randx, randy = np.random.randint(label_perturb.shape[0]), np.random.randint(label_perturb.shape[1])   
+                        actual_label = label_perturb[randx, randy]
+                        while actual_label!=255:
+                            perturb_label = np.random.randint(19)  
+                            if actual_label!= perturb_label: break  
+                        if actual_label == 255: 
+                            perturb_label = 255 
+                        label_perturb[randx,randy] = perturb_label
+                    
+                    label = torch.tensor(np.array(label))  
+
+                    label_perturb = Image.fromarray(label_perturb)    
+                    label_perturb_tensor = torch.tensor(np.array(label_perturb))  
+                    label_perturb_tensor[label_perturb_tensor==255] = 19  
+                    label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
+                    label_perturb_tensor = label_perturb_tensor[:, :, :19]
+
+                elif self.cfg.method_eval=='perturb_discrete_patches': 
+                    ## random discrete discontinuous patches 
+                    for _ in range(self.cfg.num_patch_perturb):  
+                        randy, randx = np.random.randint(label_perturb.shape[0] - self.cfg.patch_size), np.random.randint(label_perturb.shape[1] - self.cfg.patch_size)    
+
+
+                        lp_patch = label_perturb[randy:randy+ self.cfg.patch_size, randx:randx+ self.cfg.patch_size]  
+                        
+                        for y in range(lp_patch.shape[0]): 
+                            for x in range(lp_patch.shape[1]):
+                                actual_label = lp_patch[y,x] 
+                                while actual_label!=255:
+                                    perturb_label = np.random.randint(19)  
+                                    if actual_label!= perturb_label: break  
+                                if actual_label == 255: 
+                                    perturb_label = 255 
+                                lp_patch[y,x] = perturb_label
+                        
+                        label_perturb[randy:randy+ self.cfg.patch_size, randx:randx+ self.cfg.patch_size] = lp_patch 
+                    
+                        
+                    
+                    label = torch.tensor(np.array(label))  
+
+                    label_perturb = Image.fromarray(label_perturb)    
+                    label_perturb_tensor = torch.tensor(np.array(label_perturb))  
+                    label_perturb_tensor[label_perturb_tensor==255] = 19  
+                    label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
+                    label_perturb_tensor = label_perturb_tensor[:, :, :19]            
                 
-                if self.cfg.method_eval=='one_pix': 
+                elif self.cfg.method_eval=='one_pix': 
                 
                     ## random single pixel 
                     rand_x = np.random.randint(label_perturb.shape[0])  
-                    rand_y = np.random.randint(label_perturb.shape[1])   
+                    rand_y = np.random.randint(label_perturb.shape[1])    
                     # print(rand_x, rand_y)
 
                     """for x in range(10): 
@@ -133,7 +222,7 @@ class BaseDataSet(data.Dataset):
                     label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
                     label_perturb_tensor = label_perturb_tensor[:, :, :19]  
 
-                if self.cfg.method_eval == 'patch_pix': 
+                elif self.cfg.method_eval == 'patch_pix': 
 
                     rand_x = np.random.randint(label_perturb.shape[0]-10)  
                     rand_y = np.random.randint(label_perturb.shape[1]-10)   
@@ -157,7 +246,7 @@ class BaseDataSet(data.Dataset):
                     label_perturb_tensor = label_perturb_tensor[:, :, :19]
                     label_perturb_tensor = label_perturb_tensor[:, :, :19]  
 
-                if self.cfg.method_eval == 'gt_correct': 
+                elif self.cfg.method_eval == 'gt_correct': 
                     label_perturb = Image.fromarray(label_perturb)
                     label_perturb = transforms_compose_label(label_perturb)      
                     label_perturb_tensor = torch.tensor(np.array(label_perturb))  
@@ -165,10 +254,10 @@ class BaseDataSet(data.Dataset):
                     label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
                     label_perturb_tensor = label_perturb_tensor[:, :, :19]  
 
-                if self.cfg.method_eval == 'patch_pix_large': 
+                elif self.cfg.method_eval == 'patch_pix_large': 
                     rand_x = np.random.randint(label_perturb.shape[0]-500)  
                     rand_y = np.random.randint(label_perturb.shape[1]-500)   
-                    # print(rand_x, rand_y)
+                    # print(rand_x, rand_y) 
 
                     for x in range(500): 
                         for y in range(500): 
@@ -187,8 +276,28 @@ class BaseDataSet(data.Dataset):
                     label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
                     label_perturb_tensor = label_perturb_tensor[:, :, :19]
                     label_perturb_tensor = label_perturb_tensor[:, :, :19]  
-                    
 
+                elif self.cfg.method_eval == 'singlech': 
+                    ## random single pixel 
+                    rand_x = np.random.randint(label_perturb.shape[0])  
+                    rand_y = np.random.randint(label_perturb.shape[1])   
+                    # print(rand_x, rand_y) 
+                    
+                    actual_label = label_perturb[rand_x, rand_y] 
+                    while True and actual_label!=255: 
+                        perturb_label = np.random.randint(19)   
+                        if actual_label!= perturb_label: break  
+                    if actual_label == 255: 
+                        perturb_label = 255 
+                    label_perturb[rand_x, rand_y]  = perturb_label 
+
+                    label = transforms_compose_label(label) 
+                    label = torch.tensor(np.array(label)) 
+                    label_perturb = Image.fromarray(label_perturb)
+                    label_perturb = transforms_compose_label(label_perturb)      
+                    label_perturb_tensor = torch.tensor(np.array(label_perturb))  
+                    label_perturb_tensor = label_perturb_tensor.unsqueeze(dim=2) ## one channel
+                                    
         except: 
             print('**************') 
             print(index)
@@ -199,10 +308,14 @@ class BaseDataSet(data.Dataset):
                 
 
 def init_model(cfg):
-    model = UNet_mod(cfg.num_channels, cfg.num_classes, cfg.small).cuda()    
-    params = torch.load(cfg.restore_from)
+    # unet = cfg.unet
+    # model = UNet_mod(cfg.num_channels, cfg.num_class, cfg.small).cuda() ## previous unet model   
+    # model = UNet(unet.enc_chs, unet.dec_chs, unet.num_class).cuda()    
+    model = UNetWithResnet50Encoder(cfg.num_ip_channels, cfg.num_class)
+       
+    params = torch.load(cfg.eval_restore_from)
     model.load_state_dict(params)
-    print('----------Model initialize with weights from-------------: {}'.format(cfg.restore_from))
+    print('----------Model initialize with weights from-------------: {}'.format(cfg.eval_restore_from))
     if cfg.multigpu:
         model = nn.DataParallel(model)  
     model.eval().cuda()
@@ -219,17 +332,17 @@ def compute_iou(model, testloader, cfg, da_model, lightnet, weights):
     model = model.eval()
 
     interp = nn.Upsample(size=(1080,1920), mode='bilinear', align_corners=True)   # dark_zurich -> (1080,1920) 
-    union = torch.zeros(cfg.num_classes, 1,dtype=torch.float).cuda().float()
-    inter = torch.zeros(cfg.num_classes, 1, dtype=torch.float).cuda().float()
-    preds = torch.zeros(cfg.num_classes, 1, dtype=torch.float).cuda().float()
+    union = torch.zeros(cfg.num_class, 1,dtype=torch.float).cuda().float()
+    inter = torch.zeros(cfg.num_class, 1, dtype=torch.float).cuda().float()
+    preds = torch.zeros(cfg.num_class, 1, dtype=torch.float).cuda().float()
     # extra 
-    gts = torch.zeros(cfg.num_classes, 1, dtype=torch.float).cuda().float() 
+    gts = torch.zeros(cfg.num_class, 1, dtype=torch.float).cuda().float() 
 
-    union2 = torch.zeros(cfg.num_classes, 1,dtype=torch.float).cuda().float()
-    inter2 = torch.zeros(cfg.num_classes, 1, dtype=torch.float).cuda().float()
-    preds2 = torch.zeros(cfg.num_classes, 1, dtype=torch.float).cuda().float()
+    union2 = torch.zeros(cfg.num_class, 1,dtype=torch.float).cuda().float()
+    inter2 = torch.zeros(cfg.num_class, 1, dtype=torch.float).cuda().float()
+    preds2 = torch.zeros(cfg.num_class, 1, dtype=torch.float).cuda().float()
     # extra 
-    gts2 = torch.zeros(cfg.num_classes, 1, dtype=torch.float).cuda().float() 
+    gts2 = torch.zeros(cfg.num_class, 1, dtype=torch.float).cuda().float() 
 
     with torch.no_grad():
         for index, batch in tqdm(enumerate(testloader)):
@@ -266,6 +379,8 @@ def compute_iou(model, testloader, cfg, da_model, lightnet, weights):
             Mask = (label.squeeze())<C  # it is ignoring all the labels values equal or greater than 2 #(1080, 1920) 
             pred_e = torch.linspace(0,C-1, steps=C).view(C, 1, 1)  
             pred_e = pred_e.repeat(1, H, W).cuda()  
+            
+            ## output model correction ## prior 
             pred = output.argmax(dim=0).float() ## prior  
             # print(pred.shape) # torch.Size([1080, 1920]) 
             pred_mask = torch.eq(pred_e, pred).byte()    
@@ -282,7 +397,7 @@ def compute_iou(model, testloader, cfg, da_model, lightnet, weights):
             # print(tmp_inter.shape)  # torch.Size([19, 1080, 1920])
             cu_inter = (tmp_inter==2).view(C, -1).sum(dim=1, keepdim=True).float()
             cu_union = (tmp_inter>0).view(C, -1).sum(dim=1, keepdim=True).float()
-            cu_preds = pred_mask.view(C, -1).sum(dim=1, keepdim=True).float()
+            cu_preds = pred_mask.view(C, -1).sum(dim=1, keepdim=True).float() 
             # extra
             # cu_gts = label_mask.view(C, -1).sum(dim=1, keepdim=True).float()
             # gts += cu_gts
@@ -313,9 +428,16 @@ def compute_iou(model, testloader, cfg, da_model, lightnet, weights):
 
         ###########original
         iou = inter/union
-        acc = inter/preds
-        mIoU = iou.mean().item()
-        mAcc = acc.mean().item()
+        acc = inter/preds 
+        # iou = torch.nan_to_num(iou) 
+        # acc = torch.nan_to_num(acc)  
+        iou = np.array(iou.cpu())
+        iou = torch.tensor(np.where(np.isnan(iou), 0, iou))
+        acc = np.array(acc.cpu())
+        acc = torch.tensor(np.where(np.isnan(acc), 0, acc))
+
+        mIoU = iou.mean().item()   
+        mAcc = acc.mean().item() 
         # print('*********')
         # print(gts)
         print_iou(iou, acc, mIoU, mAcc)  ## original
@@ -325,12 +447,11 @@ def compute_iou(model, testloader, cfg, da_model, lightnet, weights):
         iou2 = inter2/union2
         acc2 = inter2/preds2
         mIoU2 = iou2.mean().item()
-        mAcc2 = acc2.mean().item()
+        mAcc2 = acc2.mean().item() 
         # print('*********')
         # print(gts)
         print_iou(iou2, acc2, mIoU2, mAcc2)  ## original
         ##################
-
         
         return iou, mIoU, acc, mAcc
 
@@ -343,29 +464,43 @@ class BaseTrainer(object):
         self.config = config
         self.output = {}
         self.writer = writer
-        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path) 
-
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_class, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path) 
 
     def validate(self): 
         self.model = self.model.eval() 
         total_loss = 0
         testloader = init_val_data(self.config) 
 
-        ## not calculating loss for now 
-        # for i_iter, batch in tqdm(enumerate(testloader)):
-        #     label_perturb_tensor, seg_label, name = batch 
+        if self.config.rgb_save: 
+            ## not calculating loss for now  
+            for i_iter, batch in tqdm(enumerate(testloader)):
+                label_perturb_tensor, seg_label, name = batch 
 
-        #     label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1)  
-        #     seg_pred = self.model(label_perturb_tensor.float().cuda())    
+                label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1)  
+                seg_pred = self.model(label_perturb_tensor.float().cuda())   
 
-        #     seg_label = seg_label.long().cuda() # cross entropy   
-        #     loss = CrossEntropy2d() # ce loss  
-        #     seg_loss = loss(seg_pred, seg_label) 
-        #     total_loss += seg_loss.item()   
+                nm = name[0].split('/')[-1] 
+                seg_preds = torch.argmax(label_perturb_tensor, dim=1) 
+                seg_preds[seg_label == 255] = 19 
+                if not os.path.exists(os.path.join('save_pred', self.config.save_path)):
+                    os.makedirs(os.path.join('save_pred', self.config.save_path))  
+                if not os.path.exists(os.path.join('save_cor', self.config.save_path)):
+                    os.makedirs(os.path.join('save_cor', self.config.save_path)) 
 
-        # total_loss /= len(iter(testloader))
-        # print('---------------------')
-        # print('Validation seg loss: {}'.format(total_loss)) 
+                seg_preds = [torch.tensor(label_img_to_color(seg_preds[sam], os.path.join('save_pred', self.config.save_path) + '/' + nm)) for sam in range(seg_pred.shape[0])]  
+
+                seg_preds = torch.argmax(seg_pred, dim=1)   
+                seg_preds[seg_label == 255] = 19 
+                seg_preds = [torch.tensor(label_img_to_color(seg_preds[sam], os.path.join('save_cor', self.config.save_path) + '/' + nm)) for sam in range(seg_pred.shape[0])]   
+
+            #     seg_label = seg_label.long().cuda() # cross entropy  
+            #     loss = CrossEntropy2d() # ce loss  
+            #     seg_loss = loss(seg_pred, seg_label) 
+            #     total_loss += seg_loss.item()   
+
+            # total_loss /= len(iter(testloader))
+            # print('---------------------')
+            # print('Validation seg loss: {}'.format(total_loss)) 
 
         print("MIou calculation: ")    
         iou, mIoU, acc, mAcc = compute_iou(self.model, testloader, self.config, self.da_model, self.lightnet, self.weights)  
@@ -418,7 +553,7 @@ class Trainer(BaseTrainer):
         self.model = model
         self.config = config
         self.writer = writer
-        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_class, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
         
     def eval(self):
         
@@ -431,10 +566,8 @@ class Trainer(BaseTrainer):
             # self.optim = optim.Adam(self.model.parameters(),
             #             lr=self.config.learning_rate, weight_decay=self.config.weight_decay)
          
-        print('Lets eval...')
-
+        # print('Lets eval...') 
         valid_loss = self.validate()   
-                
         return     
  
 

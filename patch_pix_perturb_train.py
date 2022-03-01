@@ -6,6 +6,7 @@ import torchvision.transforms as transforms
 import os, sys 
 import torch.backends.cudnn as cudnn 
 from model.Unet import * 
+from model.unet_resnetenc import *
 from init_config import * 
 from easydict import EasyDict as edict 
 import numpy as np  
@@ -29,7 +30,7 @@ def init_train_data(cfg):
     cfg.input_size = train_env.input_size  
 
     trainloader = data.DataLoader(
-            BaseDataSet(cfg, cfg.train_data_dir, cfg.train_data_list, cfg.train, cfg.num_classes, ignore_label=255, set='train'),
+            BaseDataSet(cfg, cfg.train_data_dir, cfg.train_data_list, cfg.train, cfg.num_class, ignore_label=255, set='train'),
             batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.worker, pin_memory=True)
 
     return trainloader,cfg
@@ -41,11 +42,47 @@ def init_val_data(cfg):
     cfg.input_size = val_env.input_size  
 
     valloader = data.DataLoader(
-            BaseDataSet(cfg, cfg.val_data_dir, cfg.val_data_list, cfg.val, cfg.num_classes, ignore_label=255, set='val'),
+            BaseDataSet(cfg, cfg.val_data_dir, cfg.val_data_list, cfg.val, cfg.num_class, ignore_label=255, set='val'),
             batch_size=1, shuffle=True, num_workers=cfg.worker, pin_memory=True)
 
     return valloader
-    
+
+
+def label_img_to_color(img, save_path=None): 
+
+    label_to_color = {
+        0: [128, 64,128],
+        1: [244, 35,232],
+        2: [ 70, 70, 70],
+        3: [102,102,156],
+        4: [190,153,153],
+        5: [153,153,153],
+        6: [250,170, 30],
+        7: [220,220,  0],
+        8: [107,142, 35],
+        9: [152,251,152],
+        10: [ 70,130,180],
+        11: [220, 20, 60],
+        12: [255,  0,  0],
+        13: [  0,  0,142],
+        14: [  0,  0, 70],
+        15: [  0, 60,100],
+        16: [  0, 80,100],
+        17: [  0,  0,230],
+        18: [119, 11, 32],
+        19: [0,  0, 0]
+        } 
+    img = np.array(img.cpu())
+    img_height, img_width = img.shape
+    img_color = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+    for row in range(img_height):
+        for col in range(img_width):
+            label = img[row][col] 
+            img_color[row, col] = np.array(label_to_color[label])  
+    if save_path:  
+        im = Image.fromarray(img_color) 
+        im.save(save_path)  
+    return img_color
 
 class BaseDataSet(data.Dataset): 
     def __init__(self, cfg, root, list_path,dataset, num_class, ignore_label=255, set='val'): 
@@ -99,29 +136,41 @@ class BaseDataSet(data.Dataset):
                             transforms.Resize((1080,1920), interpolation=Image.NEAREST)])  
 
                     label = Image.open(datafiles["label"]) 
+                    label = transforms_compose_label(label) 
+
                     label_perturb = np.array(label) 
                        
-                    ## random square patch 
+                    # ## random square patch 
                     
-                    rand_x = np.random.randint(label_perturb.shape[0]-500)  
-                    rand_y = np.random.randint(label_perturb.shape[1]-500)   
-                    # print(rand_x, rand_y)
+                    # rand_x = np.random.randint(label_perturb.shape[0]-10)  
+                    # rand_y = np.random.randint(label_perturb.shape[1]-10)   
+                    # # print(rand_x, rand_y)
 
-                    for x in range(500): 
-                        for y in range(500): 
-                            actual_label = label_perturb[rand_x+x, rand_y+y] 
-                            while True and actual_label!=255:   
-                                perturb_label = np.random.randint(19)  
-                                if actual_label!= perturb_label: break 
-                            if actual_label == 255: 
-                                perturb_label = 255 
-                            label_perturb[rand_x+x, rand_y+y]  = perturb_label
+                    # for x in range(10): 
+                    #     for y in range(10): 
+                    #         actual_label = label_perturb[rand_x+x, rand_y+y] 
+                    #         while True and actual_label!=255:   
+                    #             perturb_label = np.random.randint(19)  
+                    #             if actual_label!= perturb_label: break 
+                    #         if actual_label == 255: 
+                    #             perturb_label = 255 
+                    #         label_perturb[rand_x+x, rand_y+y]  = perturb_label
 
-                    label = transforms_compose_label(label) 
-                    label = torch.tensor(np.array(label)) 
-                    
-                    label_perturb = Image.fromarray(label_perturb)
-                    label_perturb = transforms_compose_label(label_perturb)      
+                    ## random discrete discontinuous pixels
+                    for _ in range(self.cfg.num_pix_perturb): 
+                        randx, randy = np.random.randint(label_perturb.shape[0]), np.random.randint(label_perturb.shape[1])   
+                        actual_label = label_perturb[randx, randy]
+                        while actual_label!=255:
+                            perturb_label = np.random.randint(19)  
+                            if actual_label!= perturb_label: break  
+                        if actual_label == 255: 
+                            perturb_label = actual_label
+                        label_perturb[randx,randy] = perturb_label
+
+
+                    label = torch.tensor(np.array(label))  
+
+                    label_perturb = Image.fromarray(label_perturb)    
                     label_perturb_tensor = torch.tensor(np.array(label_perturb))  
                     label_perturb_tensor[label_perturb_tensor==255] = 19  
                     label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
@@ -131,74 +180,71 @@ class BaseDataSet(data.Dataset):
                     
                     transforms_compose_label = transforms.Compose([transforms.Resize((512,512),interpolation=Image.NEAREST)]) 
                     label = Image.open(datafiles["label"])  
-                    ## perturbation 
-                    label_perturb = np.array(label)  
+                    label = transforms_compose_label(label)    
 
-                    # print(label_perturb.shape)  # (1080, 1920) 
-                    # non_bg_inds = np.sort(np.argwhere(label_perturb!=255),axis = 1)  
-                    # random_ind = np.random.randint(non_bg_inds.shape[0]-100) 
-                    # print(random_ind)
-                    # print(non_bg_inds[random_ind:random_ind+100, :].shape)  # (100, 2) 
-                    # print(non_bg_inds[random_ind:random_ind+100, :])
-                    # non_bg_inds = np.argwhere(label_perturb!=255)    
-                    # print(non_bg_inds) 
-                    # print('>>>>>>>>>')
-                    # print(non_bg_inds.shape) # (1895232, 2)    
-                    # random_pix = non_bg_inds[np.random.randint(non_bg_inds.shape[0]-100),:] 
-                    # random_patch_pixs = [non_bg_inds[np.random.randint(non_bg_inds.shape[0]-100) + ind ,:] for ind in range(100)] 
-                    # print(random_patch_pixs)
+                    ## perturbation 
+                    label_perturb = np.array(label)    
 
                     ## random square patch 
 
-                    rand_x = np.random.randint(label_perturb.shape[0]-500)  
-                    rand_y = np.random.randint(label_perturb.shape[1]-500)  
+                    # rand_x = np.random.randint(label_perturb.shape[0]-10)  
+                    # rand_y = np.random.randint(label_perturb.shape[1]-10)  
 
-                    # print(rand_x, rand_y)
-                    # print('>>>>>>>>>>') 
+                    # # print(rand_x, rand_y)
+                    # # print('>>>>>>>>>>') 
 
-                    for x in range(500): 
-                        for y in range(500): 
-                            actual_label = label_perturb[rand_x+x, rand_y+y] 
-                            # print(actual_label) 
-                            # print('<<<<<<<<<<<<<<<<<')
-                            while True and actual_label!=255:  ## ignoring the background pixels
-                                perturb_label = np.random.randint(19)  
-                                if actual_label!= perturb_label: break 
-                            if actual_label == 255: 
-                                perturb_label = 255 
-                            label_perturb[rand_x+x, rand_y+y]  = perturb_label
+                    # for x in range(10): 
+                    #     for y in range(10): 
+                    #         actual_label = label_perturb[rand_x+x, rand_y+y] 
+                    #         # print(actual_label) 
+                    #         # print('<<<<<<<<<<<<<<<<<')
+                    #         while True and actual_label!=255:  ## ignoring the background pixels
+                    #             perturb_label = np.random.randint(19)  
+                    #             if actual_label!= perturb_label: break 
+                    #         if actual_label == 255: 
+                    #             perturb_label = 255 
+                    #         label_perturb[rand_x+x, rand_y+y]  = perturb_label 
+
+                    ## random perturbation as hard it could be 
+
+                    ## random discrete discontinuous pixels 
+                    for _ in range(self.cfg.num_pix_perturb): 
+                        randx, randy = np.random.randint(label_perturb.shape[0]), np.random.randint(label_perturb.shape[1])   
+                        actual_label = label_perturb[randx, randy]
+                        while actual_label!=255:
+                            perturb_label = np.random.randint(19)  
+                            if actual_label!= perturb_label: break  
+                        if actual_label == 255: 
+                            perturb_label = actual_label
+                        label_perturb[randx,randy] = perturb_label
 
                     # print(label_perturb.shape)  # (1080, 1920) 
-                    # print(np.array(label)[rand_x,rand_y]) 
-                    # print('>>>>>>>>>>') 
-                    # print(label_perturb[rand_x, rand_y])   
-                    # print(np.sum(label_perturb != np.array(label))) ## 100 yes! 
+                    # print(np.sum(label_perturb != np.array(label))) ## 100 yes! (mostly)
 
-                    label = transforms_compose_label(label)   
+                   
                     label = torch.tensor(np.array(label))  
 
-                    label_perturb = Image.fromarray(label_perturb)
-                    label_perturb = transforms_compose_label(label_perturb)      
+                    label_perturb = Image.fromarray(label_perturb)    
                     label_perturb_tensor = torch.tensor(np.array(label_perturb))  
                     label_perturb_tensor[label_perturb_tensor==255] = 19  
                     label_perturb_tensor = F.one_hot(label_perturb_tensor.to(torch.int64), 20) 
-                    label_perturb_tensor = label_perturb_tensor[:, :, :19]  
-                    # print(label_perturb_tensor.shape) 
+                    label_perturb_tensor = label_perturb_tensor[:, :, :19]   
                     # print('>>>>>>>>>>>>>>>>>>>>>')
                     # label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1) 
                     # print(label_perturb_tensor.shape) 
 
         except: 
-            print('**************') 
+            print('#############') 
             print(index)
             index = index - 1 if index > 0 else index + 1 
             return self.__getitem__(index) 
 
         return label_perturb_tensor, label, name
-                
+
 
 def init_model(cfg):
-    model = UNet_mod(cfg.num_channels, cfg.num_classes, cfg.small).cuda()
+    # model = UNet_mod(cfg.num_channels, cfg.num_class, cfg.small).cuda()
+    model = UNetWithResnet50Encoder(cfg.num_ip_channels, cfg.num_class)
     if cfg.restore_from != 'None':
         params = torch.load(cfg.restore_from)
         model.load_state_dict(params)
@@ -221,7 +267,7 @@ class BaseTrainer(object):
         self.config = config
         self.output = {}
         self.writer = writer
-        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_class, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
 
     def forward(self):
         pass
@@ -257,44 +303,32 @@ class BaseTrainer(object):
     
     def validate(self, epoch): 
         self.model = self.model.eval() 
-        total_loss = 0
-        testloader = init_val_data(self.config)
+        total_loss = 0 
+        it = 0
+        testloader = init_val_data(self.config)  
+
         for i_iter, batch in tqdm(enumerate(testloader)):
             label_perturb_tensor, seg_label, name = batch
-
-            """## perturb the input tensor by one pixel randomly to make wrong version of the input 
-            ## w/o background concentrating 
-            batch_ind_wo_backgr = [torch.sort(np.argwhere(seg_label[bt] != 255))[0] for bt in range(seg_label.shape[0])]      
-            batch_total_pix_wo_backgr = [batch_ind_wo_backgr[bt].shape[1] for bt in range(seg_label.shape[0])]   
-            batch_rand_patchind = [np.random.randint(50, batch_total_pix_wo_backgr[bt] - 50) for bt in range(seg_label.shape[0])]  
-            batch_rand_patchpixs = [batch_ind_wo_backgr[bt][:,batch_rand_patchind[bt]-50:batch_rand_patchind[bt]+50] for bt in range(seg_label.shape[0])]   
-            # print(batch_rand_patchpixs[0].shape) # torch.Size([2, 100])
-            batch_actual_labelind = [seg_label[bt, batch_rand_patchpixs[bt][0, np.random.randint(100)].item(), batch_rand_patchpixs[bt][1, np.random.randint(100)].item()] for bt in range(seg_label.shape[0])]  
-            seg_label_perturb = seg_label.detach().clone()
-            
-            for bt in range(seg_label.shape[0]):
-                while True:   
-                    perturb_label = np.random.randint(19)  
-                    if batch_actual_labelind[bt].item() != perturb_label: break  
-                # print(batch_rand_patchpixs[0])   
-                
-                for i in range(batch_rand_patchpixs[bt].shape[1]): 
-                    seg_label_perturb[bt, batch_rand_patchpixs[bt][0, i].item(), batch_rand_patchpixs[bt][1,i].item()] = perturb_label"""
-            
-            """input_tensor = seg_label_perturb.detach().clone() 
-            input_tensor[input_tensor==255] = 19 # background class 
-            input_tensor = F.one_hot(input_tensor.to(torch.int64), 20) ## including the background class 
-            input_tensor = input_tensor[:,:, :, :19] # till the first 19 class of foreground  # (b,h,w,c)
-            input_tensor = input_tensor.transpose(3,2).transpose(2,1) # (b,c,h,w) """ 
-
+            # print(label_perturb_tensor.shape) # torch.Size([1, 1080, 1920, 19]) 
+            # print(seg_label.shape) # torch.Size([1, 1080, 1920])
 
             label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1)  
-            seg_pred = self.model(label_perturb_tensor.float().cuda())    
+            seg_pred = self.model(label_perturb_tensor.float().cuda())     
+
+            if self.config.rgb:  
+
+                it = it + 1  
+                seg_preds = torch.argmax(label_perturb_tensor, dim=1) 
+                seg_preds = [torch.tensor(label_img_to_color(seg_preds[sam], 'save_patch_ip/' + str(sam + iter) + '.png')) for sam in range(seg_pred.shape[0])]  
+
+                seg_preds = torch.argmax(seg_pred, dim=1) 
+                seg_preds = [torch.tensor(label_img_to_color(seg_preds[sam], 'save_patch/' + str(sam + iter) + '.png')) for sam in range(seg_pred.shape[0])]  
+    
 
             seg_label = seg_label.long().cuda() # cross entropy   
             loss = CrossEntropy2d() # ce loss  
             seg_loss = loss(seg_pred, seg_label) 
-            total_loss += seg_loss.item()
+            total_loss += seg_loss.item() 
 
         total_loss /= len(iter(testloader))
         print('---------------------')
@@ -347,52 +381,12 @@ class Trainer(BaseTrainer):
         self.model = model
         self.config = config
         self.writer = writer
-        self.da_model, self.lightnet, self.weights = pred(self.config.num_classes, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
+        self.da_model, self.lightnet, self.weights = pred(self.config.num_class, self.config.model_dannet, self.config.restore_from_da, self.config.restore_light_path)
         
     def iter(self, batch):
         
         label_perturb_tensor, seg_label, name = batch
     
-        ## perturb the input tensor by one pixel randomly to make wrong version of the input 
-        ## w/o background concentrating 
-        
-        # print(seg_label.shape) # torch.Size([4, 1080, 1920]) 
-        # batch_ind_wo_backgr = [torch.sort(np.argwhere(seg_label[bt] != 255))[0] for bt in range(seg_label.shape[0])]       
-        # batch_total_pix_wo_backgr = [batch_ind_wo_backgr[bt].shape[1] for bt in range(seg_label.shape[0])]   
-        # batch_rand_patchind = [np.random.randint(50, batch_total_pix_wo_backgr[bt] - 50) for bt in range(seg_label.shape[0])]  
-        # batch_rand_patchpixs = [batch_ind_wo_backgr[bt][:,batch_rand_patchind[bt]-50:batch_rand_patchind[bt]+50] for bt in range(seg_label.shape[0])]   
-        # # print(batch_rand_patchpixs[0].shape) # torch.Size([2, 100])
-        # batch_actual_labelind = [seg_label[bt, batch_rand_patchpixs[bt][0, np.random.randint(100)].item(), batch_rand_patchpixs[bt][1, np.random.randint(100)].item()] for bt in range(seg_label.shape[0])]  
-        # seg_label_perturb = seg_label.detach().clone()  
-
-        # for bt in range(seg_label.shape[0]):
-        #     while True:   
-        #         perturb_label = np.random.randint(19)   
-        #         if batch_actual_labelind[bt].item() != perturb_label: break  
-        #     # print(batch_rand_patchpixs[0])   
-            
-        #     for i in range(batch_rand_patchpixs[bt].shape[1]): 
-        #         seg_label_perturb[bt, batch_rand_patchpixs[bt][0, i].item(), batch_rand_patchpixs[bt][1,i].item()] = perturb_label
-                     
-        # input_tensor = seg_label_perturb.detach().clone()   
-        # input_tensor[input_tensor==255] = 19 # background class 
-        # input_tensor = F.one_hot(input_tensor.to(torch.int64), 20) ## including the background class  
-        # input_tensor = input_tensor[:,:, :, :19] # till the first 19 class of foreground  # (b,h,w,c)  
-        # input_tensor = input_tensor.transpose(3,2).transpose(2,1) # (b,c,h,w)   
-        
-        """randx_pix = np.random.randint(input_tensor.shape[2]-10)
-        randy_pix = np.random.randint(input_tensor.shape[2]-10)
-        # print(randx_pix, randy_pix) 
-        
-        for x in range(10):
-            for y in range(10):  
-                org_batch_val = input_tensor[:, :, randx_pix + x, randy_pix + y] 
-                # print(org_batch_val.shape)  # (4,19) 
-                # print(org_batch_val)  # one hot  
-                shuffle_inds = torch.randperm(org_batch_val.shape[1]) 
-                # print(shuffle_inds)   
-                input_tensor[:, :, randx_pix + x, randy_pix + y] = org_batch_val[:, shuffle_inds]
-"""                
         label_perturb_tensor = label_perturb_tensor.transpose(3,2).transpose(2,1)  
         seg_pred = self.model(label_perturb_tensor.float().cuda()) 
         # print(seg_label)  
@@ -475,7 +469,7 @@ class Trainer(BaseTrainer):
 
 
 def main(): 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '7' 
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
     torch.manual_seed(1234)
     torch.cuda.manual_seed(1234)
     np.random.seed(1234)

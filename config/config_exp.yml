@@ -1,28 +1,37 @@
 note: 'train'
-# configs of data
-        
-model: 'unet_gt_perturb_onepix_singlech'
-train: True
-multigpu: False 
+
+# configs of data  
+model: 'patch_perturb_10000_sgd_lr1e-2'
+train: False
+multigpu: False
 fixbn: False  # check this also ..  chg 
 fix_seed: True
 screen: True
 small: False
+# restore_from: '/home/sidd_s/scratch/saved_models/acdc/dannet/train/unetresenc_dannet_patch_perturb.pth'   
 restore_from: None
+one_ip_channel: False 
+num_ip_channels: 19
+rgb_save: True 
+num_pix_perturb: 1000000 
+num_patch_perturb: 100
+patch_size: 100
 
 ## eval 
-eval_restore_from: '../scratch/saved_models/acdc/dannet/train/unet_gt_perturb_dannet_shuffle_weights2.pth'
-method_eval: 'shuffle_w_weights'
+eval_restore_from: '../scratch/saved_models/acdc/dannet/train/patch_perturb_10000_sgd_lr1e-2.pth'
+method_eval: 'perturb_discrete_patches'
+# method_eval: 'perturb' 
+save_path: 'line'
 
 # dannet model pred 
 model_dannet: 'PSPNet'
 restore_from_da: '/home/sidd_s/scratch/saved_models/DANNet/dannet_psp.pth'
 restore_light_path: '/home/sidd_s/scratch/saved_models/DANNet/dannet_psp_light.pth'
-one_hot: True 
+num_class: 19
 
 # Optimizaers
-learning_rate: 1.0e-4 #changed from 7.5e-5 
-epochs: 250 #chg
+learning_rate: 1.0e-2
+epochs: 500 #chg
 weight_decay: 0.0005
 momentum: 0.9 
 power: 0.9 
@@ -34,20 +43,29 @@ tensorboard: True
 val: True
 val_freq: 5 # 372 ..after one epoch for cityscapes train set (2975) with batch 8
 
+# unet model 
+## direct list not specifying since in init there is restriction that dict value should only be received 
+# unet: {
+#         enc_chs: [1, 64, 128, 256, 512 , 1024 ], 
+#         dec_chs: [1024, 512, 256, 128, 64],
+#         out_chs: 1, 
+# } 
+
+## loss 
+mse: False
 
 # Dataset 
-train: 'acdc_train_label' #chg for pred label
+train: 'acdc_train_label' #chg for pred label 
+# train: 'perturb_bdd_city' #chg for pred label
+# train: 'acdc_bdd_city' #chg for pred label 
+# train: 'bdd_city'
 val: 'acdc_val_label' #chg
+# train: 'bdd_city_trval' 
+# val: 'bdd_city_trval'
 worker: 4
-batch_size: 4 #chg
-num_classes: 19 #chg
-num_channels: 1 # chg 
-
-#Transforms in training data
-input: 720 # resize  
-crop: 512 # crop of resized image 
-scale_min: 0.5
-scale_max: 1.5
+batch_size: 8 #chg  
+num_channels: 19 
+ 
 
 # Model hypers
 init_weight: '/home/sidd_s/scratch/saved_models/city_pretrained_deeplab/model410_city_deeplabv2.pth' 
@@ -84,4 +102,24 @@ acdc_val_label: {
 darkzurich: {
         data_dir: '/home/sidd_s/scratch/dataset/dark_zurich_val',
         data_list: './dataset/list/darkzurich/val.txt'
+}  
+
+perturb_bdd_city: {
+        data_dir: ['/home/sidd_s/scratch/dataset/texture_variant/bdd_acdc', '/home/sidd_s/scratch/dataset/texture_variant/cityscapes_acdc'],
+        data_list: ['/home/sidd_s/Prior_Net/dataset/list/bdd/bdd_train.txt', '/home/sidd_s/Prior_Net/dataset/list/cityscapes/train.txt']
+}    
+
+acdc_bdd_city: { 
+        data_dir: ['/home/sidd_s/scratch/dataset', '/home/sidd_s/scratch/dataset/bdd100k_seg/bdd100k/seg/images/train', '/home/sidd_s/scratch/dataset/cityscapes'], 
+        data_list: ['./dataset/list/acdc/acdc_trainrgb.txt', '/home/sidd_s/Prior_Net/dataset/list/bdd/bdd_train.txt', './dataset/list/cityscapes/train.txt']
+}
+
+bdd_city: { 
+        data_dir: ['/home/sidd_s/scratch/dataset/bdd100k_seg/bdd100k/seg/images/train', '/home/sidd_s/scratch/dataset/cityscapes'], 
+        data_list: ['/home/sidd_s/Prior_Net/dataset/list/bdd/bdd_train.txt', './dataset/list/cityscapes/train.txt']
+} 
+
+bdd_city_trval: { 
+        data_dir: ['/home/sidd_s/scratch/dataset/bdd100k_seg/bdd100k/seg/images/', '/home/sidd_s/scratch/dataset/cityscapes'], 
+        data_list: ['/home/sidd_s/Prior_Net/dataset/list/bdd/', './dataset/list/cityscapes/']
 }
