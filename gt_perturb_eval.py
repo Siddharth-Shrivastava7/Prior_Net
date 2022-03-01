@@ -162,6 +162,7 @@ class BaseDataSet(data.Dataset):
 
                 elif self.cfg.method_eval=='perturb_discrete_patches': 
                     ## random discrete discontinuous patches 
+                    ## square patch
                     for _ in range(self.cfg.num_patch_perturb):  
                         randy, randx = np.random.randint(label_perturb.shape[0] - self.cfg.patch_size), np.random.randint(label_perturb.shape[1] - self.cfg.patch_size)    
 
@@ -482,6 +483,7 @@ class BaseTrainer(object):
                 nm = name[0].split('/')[-1] 
                 seg_preds = torch.argmax(label_perturb_tensor, dim=1) 
                 seg_preds[seg_label == 255] = 19 
+                
                 if not os.path.exists(os.path.join('save_pred', self.config.save_path)):
                     os.makedirs(os.path.join('save_pred', self.config.save_path))  
                 if not os.path.exists(os.path.join('save_cor', self.config.save_path)):
